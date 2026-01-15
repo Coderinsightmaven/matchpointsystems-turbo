@@ -1,34 +1,36 @@
 {
   "name": "web",
-  "version": "0.0.1",
-  "type": "module",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "npm-run-all --parallel dev:frontend dev:backend",
+    "dev:frontend": "next dev",
+    "dev:backend": "bun --cwd ../../packages/backend run dev",
+    "predev": "bun --cwd ../../packages/backend run predev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "lint:fix": "next lint --fix",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.90",
-    "@workspace/ui": "workspace:*",
-    "convex": "^1.31.4",
-    "lucide-react": "^0.475.0",
+    "@workspace/backend": "workspace:*",
+    "convex": "^1.31.0",
     "next": "16.0.10",
-    "next-themes": "^0.4.6",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   },
   "devDependencies": {
+    "@convex-dev/eslint-plugin": "^1.1.1",
     "@tailwindcss/postcss": "^4.1.17",
-    "@types/node": "^20.19.25",
-    "@types/react": "^19.2.7",
+    "@types/node": "^24.10.4",
+    "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
-    "@workspace/eslint-config": "workspace:^",
-    "@workspace/typescript-config": "workspace:*",
+    "dotenv": "^17.2.3",
     "eslint": "^9.39.1",
+    "eslint-config-next": "16.0.3",
+    "npm-run-all2": "^8.0.4",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3"
   }
 }

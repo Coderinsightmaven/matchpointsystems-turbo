@@ -1,40 +1,41 @@
 import { v } from "convex/values";
-import {
-  internalQuery,
-  internalMutation,
-  internalAction,
-} from "./_generated/server";
-import { internal } from "./_generated/api";
+import { query, mutation, action } from "./_generated/server";
+import { api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Write your Convex functions in any file inside this directory (`convex`).
 // See https://docs.convex.dev/functions for more.
 
 // You can read data from the database via a query:
-export const myQuery = internalQuery({
+export const listNumbers = query({
   // Validators for arguments.
   args: {
-    first: v.number(),
-    second: v.string(),
+    count: v.number(),
   },
 
   // Query implementation.
-  handler: async (ctx, args: any) => {
+  handler: async (ctx, args) => {
     //// Read the database as many times as you need here.
     //// See https://docs.convex.dev/database/reading-data.
-    // const documents = await ctx.db.query("tableName").collect();
-    // return documents;
-
-    console.log(args.first, args.second);
-    return args.first;
+    const numbers = await ctx.db
+      .query("numbers")
+      // Ordered by _creationTime, return most recent
+      .order("desc")
+      .take(args.count);
+    const userId = await getAuthUserId(ctx);
+    const user = userId === null ? null : await ctx.db.get("users", userId);
+    return {
+      viewer: user?.email ?? null,
+      numbers: numbers.reverse().map((number) => number.value),
+    };
   },
 });
 
 // You can write data to the database via a mutation:
-export const myMutation = internalMutation({
+export const addNumber = mutation({
   // Validators for arguments.
   args: {
-    first: v.number(),
-    second: v.string(),
+    value: v.number(),
   },
 
   // Mutation implementation.
@@ -42,16 +43,17 @@ export const myMutation = internalMutation({
     //// Insert or modify documents in the database here.
     //// Mutations can also read from the database like queries.
     //// See https://docs.convex.dev/database/writing-data.
-    // const id = await ctx.db.insert("tableName", {a: args.first, b: args.second});
 
-    console.log(args.first, args.second);
+    const id = await ctx.db.insert("numbers", { value: args.value });
+
+    console.log("Added new document with id:", id);
     // Optionally, return a value from your mutation.
-    return args;
+    // return id;
   },
 });
 
 // You can fetch data from and send data to third-party APIs via an action:
-export const myAction = internalAction({
+export const myAction = action({
   // Validators for arguments.
   args: {
     first: v.number(),
@@ -66,16 +68,14 @@ export const myAction = internalAction({
     // const data = await response.json();
 
     //// Query data by running Convex queries.
-    const data = await ctx.runQuery(internal.myFunctions.myQuery, {
-      first: args.first,
-      second: args.second,
+    const data = await ctx.runQuery(api.myFunctions.listNumbers, {
+      count: 10,
     });
     console.log(data);
 
     //// Write data by running Convex mutations.
-    await ctx.runMutation(internal.myFunctions.myMutation, {
-      first: args.first,
-      second: args.second,
+    await ctx.runMutation(api.myFunctions.addNumber, {
+      value: args.first,
     });
   },
 });
