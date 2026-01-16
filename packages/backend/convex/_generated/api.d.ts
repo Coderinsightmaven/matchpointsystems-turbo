@@ -18,6 +18,7 @@ import type * as myFunctions from "../myFunctions.js";
 import type * as organizations from "../organizations.js";
 import type * as permissions from "../permissions.js";
 import type * as roles from "../roles.js";
+import type * as scoring from "../scoring.js";
 import type * as seed from "../seed.js";
 import type * as tournaments from "../tournaments.js";
 import type * as users from "../users.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   organizations: typeof organizations;
   permissions: typeof permissions;
   roles: typeof roles;
+  scoring: typeof scoring;
   seed: typeof seed;
   tournaments: typeof tournaments;
   users: typeof users;

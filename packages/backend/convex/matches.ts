@@ -15,10 +15,43 @@ const formatValidator = v.union(
   v.literal("teams"),
 );
 
+const divisionValidator = v.union(
+  v.literal("mens"),
+  v.literal("womens"),
+  v.literal("mixed"),
+);
+
 const statusValidator = v.union(
   v.literal("scheduled"),
+  v.literal("in_progress"),
   v.literal("completed"),
 );
+
+const scoringFormatValidator = v.union(
+  v.literal("standard"),
+  v.literal("avp_beach"),
+);
+
+const scoreValidator = v.object({
+  currentSet: v.number(),
+  home: v.number(),
+  away: v.number(),
+  setsWon: v.object({
+    home: v.number(),
+    away: v.number(),
+  }),
+  setHistory: v.array(v.object({
+    home: v.number(),
+    away: v.number(),
+  })),
+});
+
+const pointHistoryValidator = v.array(v.object({
+  side: v.union(v.literal("home"), v.literal("away")),
+  setNumber: v.number(),
+  homeScore: v.number(),
+  awayScore: v.number(),
+}));
 
 const matchValidator = v.object({
   _id: v.id("matches"),
@@ -26,11 +59,15 @@ const matchValidator = v.object({
   organizationId: v.id("organizations"),
   sport: v.literal("volleyball"),
   format: formatValidator,
+  division: v.optional(divisionValidator),
   status: statusValidator,
   name: v.optional(v.string()),
   participants: v.array(participantValidator),
   tournamentId: v.id("tournaments"),
   createdBy: v.optional(v.id("users")),
+  scoringFormat: v.optional(scoringFormatValidator),
+  score: v.optional(scoreValidator),
+  pointHistory: v.optional(pointHistoryValidator),
 });
 
 /**
@@ -40,9 +77,11 @@ const matchValidator = v.object({
 export const createMatch = mutation({
   args: {
     format: formatValidator,
+    division: v.optional(divisionValidator),
     name: v.optional(v.string()),
     participants: v.array(participantValidator),
     tournamentId: v.id("tournaments"),
+    scoringFormat: v.optional(scoringFormatValidator),
   },
   returns: v.id("matches"),
   handler: async (ctx, args) => {
@@ -91,11 +130,13 @@ export const createMatch = mutation({
       organizationId,
       sport: "volleyball",
       format: args.format,
+      division: args.division,
       status: "scheduled",
       name: args.name,
       participants: args.participants,
       tournamentId: args.tournamentId,
       createdBy: userId,
+      scoringFormat: args.scoringFormat,
     });
   },
 });

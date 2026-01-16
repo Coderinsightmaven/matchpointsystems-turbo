@@ -94,7 +94,16 @@ export default defineSchema({
       v.literal("doubles"),
       v.literal("teams"),
     ),
-    status: v.union(v.literal("scheduled"), v.literal("completed")),
+    division: v.optional(v.union(
+      v.literal("mens"),
+      v.literal("womens"),
+      v.literal("mixed"),
+    )),
+    status: v.union(
+      v.literal("scheduled"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+    ),
     name: v.optional(v.string()),
     participants: v.array(
       v.object({
@@ -105,6 +114,31 @@ export default defineSchema({
     ),
     tournamentId: v.id("tournaments"),
     createdBy: v.optional(v.id("users")),
+    // Scoring fields
+    scoringFormat: v.optional(v.union(
+      v.literal("standard"),
+      v.literal("avp_beach"),
+    )),
+    score: v.optional(v.object({
+      currentSet: v.number(),
+      home: v.number(),
+      away: v.number(),
+      setsWon: v.object({
+        home: v.number(),
+        away: v.number(),
+      }),
+      setHistory: v.array(v.object({
+        home: v.number(),
+        away: v.number(),
+      })),
+    })),
+    // Point history for undo functionality
+    pointHistory: v.optional(v.array(v.object({
+      side: v.union(v.literal("home"), v.literal("away")),
+      setNumber: v.number(),
+      homeScore: v.number(),
+      awayScore: v.number(),
+    }))),
   })
     .index("by_organization", ["organizationId"])
     .index("by_sport", ["sport"])

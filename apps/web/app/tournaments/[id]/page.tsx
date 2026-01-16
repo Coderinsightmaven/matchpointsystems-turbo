@@ -26,15 +26,19 @@ export default function TournamentDetailPage({
   const createMatch = useMutation(api.matches.createMatch);
 
   const [format, setFormat] = useState<"singles" | "doubles" | "teams">("singles");
+  const [division, setDivision] = useState<"mens" | "womens" | "mixed">("mens");
+  const [scoringFormat, setScoringFormat] = useState<"standard" | "avp_beach">("avp_beach");
   const [matchName, setMatchName] = useState("");
   const [homeTeamName, setHomeTeamName] = useState("");
   const [awayTeamName, setAwayTeamName] = useState("");
-  const [homePlayers, setHomePlayers] = useState("");
-  const [awayPlayers, setAwayPlayers] = useState("");
+  const [homeSelectedPlayers, setHomeSelectedPlayers] = useState<string[]>([]);
+  const [awaySelectedPlayers, setAwaySelectedPlayers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const canManage = myOrg?.membership.role === "owner" || myOrg?.membership.role === "admin";
+  const teamNames = myOrg?.organization.teamNames ?? [];
+  const playerNames = myOrg?.organization.playerNames ?? [];
 
   if (tournament === undefined) {
     return (
@@ -57,8 +61,21 @@ export default function TournamentDetailPage({
 
   const requiredPlayers = format === "singles" ? 1 : format === "doubles" ? 2 : 0;
 
-  const parsePlayers = (value: string) =>
-    value.split(",").map((p) => p.trim()).filter(Boolean);
+  const toggleHomePlayer = (name: string) => {
+    if (homeSelectedPlayers.includes(name)) {
+      setHomeSelectedPlayers(homeSelectedPlayers.filter((p) => p !== name));
+    } else if (format === "teams" || homeSelectedPlayers.length < requiredPlayers) {
+      setHomeSelectedPlayers([...homeSelectedPlayers, name]);
+    }
+  };
+
+  const toggleAwayPlayer = (name: string) => {
+    if (awaySelectedPlayers.includes(name)) {
+      setAwaySelectedPlayers(awaySelectedPlayers.filter((p) => p !== name));
+    } else if (format === "teams" || awaySelectedPlayers.length < requiredPlayers) {
+      setAwaySelectedPlayers([...awaySelectedPlayers, name]);
+    }
+  };
 
   const handleStatusUpdate = async (status: "draft" | "active" | "completed") => {
     try {
@@ -81,17 +98,14 @@ export default function TournamentDetailPage({
     event.preventDefault();
     setError(null);
 
-    const homePlayersList = parsePlayers(homePlayers);
-    const awayPlayersList = parsePlayers(awayPlayers);
-
     const homeParticipant = {
       side: "home" as const,
-      players: homePlayersList,
+      players: homeSelectedPlayers,
       ...(format === "teams" ? { teamName: homeTeamName.trim() } : {}),
     };
     const awayParticipant = {
       side: "away" as const,
-      players: awayPlayersList,
+      players: awaySelectedPlayers,
       ...(format === "teams" ? { teamName: awayTeamName.trim() } : {}),
     };
 
@@ -101,7 +115,7 @@ export default function TournamentDetailPage({
         return;
       }
     } else {
-      if (homePlayersList.length !== requiredPlayers || awayPlayersList.length !== requiredPlayers) {
+      if (homeSelectedPlayers.length !== requiredPlayers || awaySelectedPlayers.length !== requiredPlayers) {
         setError(`${format} format requires ${requiredPlayers} player(s) per side.`);
         return;
       }
@@ -111,15 +125,17 @@ export default function TournamentDetailPage({
     try {
       await createMatch({
         format,
+        division,
         participants: [homeParticipant, awayParticipant],
         tournamentId,
+        scoringFormat,
         ...(matchName.trim() ? { name: matchName.trim() } : {}),
       });
       setMatchName("");
       setHomeTeamName("");
       setAwayTeamName("");
-      setHomePlayers("");
-      setAwayPlayers("");
+      setHomeSelectedPlayers([]);
+      setAwaySelectedPlayers([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create match");
     } finally {
@@ -216,7 +232,7 @@ export default function TournamentDetailPage({
 
           <div className="flex flex-col gap-2">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Format
+              Match Format
             </label>
             <div className="flex gap-2">
               {(["singles", "doubles", "teams"] as const).map((opt) => (
@@ -241,29 +257,124 @@ export default function TournamentDetailPage({
             )}
           </div>
 
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Division
+            </label>
+            <div className="flex gap-2">
+              {([
+                { value: "mens", label: "Men's" },
+                { value: "womens", label: "Women's" },
+                { value: "mixed", label: "Mixed" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    division === opt.value
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600"
+                  }`}
+                  onClick={() => setDivision(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Scoring Format
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  scoringFormat === "avp_beach"
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600"
+                }`}
+                onClick={() => setScoringFormat("avp_beach")}
+              >
+                AVP Beach (Best of 3)
+              </button>
+              <button
+                type="button"
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  scoringFormat === "standard"
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600"
+                }`}
+                onClick={() => setScoringFormat("standard")}
+              >
+                Standard (Best of 5)
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">
+              {scoringFormat === "avp_beach"
+                ? "Sets to 21, tiebreaker to 15, win by 2"
+                : "Sets to 25, tiebreaker to 15, win by 2"}
+            </p>
+          </div>
+
           {format === "teams" && (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  Home team name
+                  Home team
                 </label>
-                <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-                  placeholder="Home team"
-                  value={homeTeamName}
-                  onChange={(e) => setHomeTeamName(e.target.value)}
-                />
+                {teamNames.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {teamNames.map((team) => (
+                      <button
+                        key={team}
+                        type="button"
+                        onClick={() => setHomeTeamName(homeTeamName === team ? "" : team)}
+                        disabled={awayTeamName === team}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                          homeTeamName === team
+                            ? "bg-slate-800 text-white border-slate-800"
+                            : awayTeamName === team
+                              ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                              : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {team}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No teams in roster. Add teams on the Roster page.</p>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  Away team name
+                  Away team
                 </label>
-                <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-                  placeholder="Away team"
-                  value={awayTeamName}
-                  onChange={(e) => setAwayTeamName(e.target.value)}
-                />
+                {teamNames.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {teamNames.map((team) => (
+                      <button
+                        key={team}
+                        type="button"
+                        onClick={() => setAwayTeamName(awayTeamName === team ? "" : team)}
+                        disabled={homeTeamName === team}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                          awayTeamName === team
+                            ? "bg-slate-800 text-white border-slate-800"
+                            : homeTeamName === team
+                              ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                              : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {team}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No teams in roster. Add teams on the Roster page.</p>
+                )}
               </div>
             </div>
           )}
@@ -271,25 +382,75 @@ export default function TournamentDetailPage({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Home players
+                Home players {format !== "teams" && `(${homeSelectedPlayers.length}/${requiredPlayers})`}
               </label>
-              <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-                placeholder="Comma-separated names"
-                value={homePlayers}
-                onChange={(e) => setHomePlayers(e.target.value)}
-              />
+              {playerNames.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {playerNames.map((player) => {
+                    const isHomeSelected = homeSelectedPlayers.includes(player);
+                    const isAwaySelected = awaySelectedPlayers.includes(player);
+                    const canSelectMore = format === "teams" || homeSelectedPlayers.length < requiredPlayers;
+                    
+                    return (
+                      <button
+                        key={player}
+                        type="button"
+                        onClick={() => toggleHomePlayer(player)}
+                        disabled={isAwaySelected || (!isHomeSelected && !canSelectMore)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                          isHomeSelected
+                            ? "bg-slate-800 text-white border-slate-800"
+                            : isAwaySelected
+                              ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                              : !canSelectMore
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {player}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">No players in roster. Add players on the Roster page.</p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Away players
+                Away players {format !== "teams" && `(${awaySelectedPlayers.length}/${requiredPlayers})`}
               </label>
-              <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-                placeholder="Comma-separated names"
-                value={awayPlayers}
-                onChange={(e) => setAwayPlayers(e.target.value)}
-              />
+              {playerNames.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {playerNames.map((player) => {
+                    const isAwaySelected = awaySelectedPlayers.includes(player);
+                    const isHomeSelected = homeSelectedPlayers.includes(player);
+                    const canSelectMore = format === "teams" || awaySelectedPlayers.length < requiredPlayers;
+                    
+                    return (
+                      <button
+                        key={player}
+                        type="button"
+                        onClick={() => toggleAwayPlayer(player)}
+                        disabled={isHomeSelected || (!isAwaySelected && !canSelectMore)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                          isAwaySelected
+                            ? "bg-slate-800 text-white border-slate-800"
+                            : isHomeSelected
+                              ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                              : !canSelectMore
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {player}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">No players in roster. Add players on the Roster page.</p>
+              )}
             </div>
           </div>
 
@@ -322,27 +483,71 @@ export default function TournamentDetailPage({
               const homeLabel = home?.teamName || home?.players.join(", ") || "Home";
               const awayLabel = away?.teamName || away?.players.join(", ") || "Away";
               const formatLabel = match.format.charAt(0).toUpperCase() + match.format.slice(1);
+              const divisionLabel = match.division
+                ? match.division === "mens" ? "Men's" : match.division === "womens" ? "Women's" : "Mixed"
+                : null;
+              const hasScoring = !!match.scoringFormat;
+              const isLive = match.status === "in_progress";
+              const isCompleted = match.status === "completed";
+
+              const scoreDisplay = match.score
+                ? `${match.score.setsWon.home}-${match.score.setsWon.away}`
+                : null;
+              const currentSetScore = match.score && match.status === "in_progress"
+                ? `(${match.score.home}-${match.score.away})`
+                : null;
 
               return (
-                <div
+                <Link
                   key={match._id}
-                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  href={hasScoring ? `/tournaments/${tournamentId}/match/${match._id}` : "#"}
+                  className={`block p-4 rounded-xl border transition-colors ${
+                    hasScoring
+                      ? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-500"
+                      : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-default"
+                  }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="font-semibold text-slate-800 dark:text-slate-200">
-                        {match.name || "Volleyball Match"}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-800 dark:text-slate-200">
+                          {match.name || "Volleyball Match"}
+                        </p>
+                        {isLive && (
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-white">
+                            LIVE
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                         {homeLabel} vs {awayLabel}
                       </p>
+                      {scoreDisplay && (
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200 mt-2">
+                          {scoreDisplay} {currentSetScore}
+                        </p>
+                      )}
+                      {match.score?.setHistory && match.score.setHistory.length > 0 && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          {match.score.setHistory.map((s, i) => `${s.home}-${s.away}`).join(", ")}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-slate-500">{formatLabel}</p>
-                      <p className="text-xs text-slate-500">{match.status}</p>
+                      <p className="text-xs text-slate-500">
+                        {divisionLabel && `${divisionLabel} `}{formatLabel}
+                      </p>
+                      {!isLive && (
+                        <p className="text-xs text-slate-500">
+                          {isCompleted ? "Completed" : match.status}
+                        </p>
+                      )}
+                      {hasScoring && !isCompleted && !isLive && (
+                        <p className="text-xs text-blue-600 mt-1">Score match →</p>
+                      )}
                     </div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
