@@ -47,19 +47,34 @@ function SignOutButton() {
   const { isAuthenticated } = useConvexAuth();
   const { signOut } = useAuthActions();
   const router = useRouter();
+  const adminAccess = useQuery(
+    api.adminAccess.checkAdminAccess,
+    isAuthenticated ? {} : "skip"
+  );
+
   return (
     <>
       {isAuthenticated && (
-        <button
-          className="bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
-          onClick={() =>
-            void signOut().then(() => {
-              router.push("/signin");
-            })
-          }
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          {adminAccess?.isAdmin && (
+            <Link
+              href="/admin"
+              className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 text-sm font-medium transition-colors"
+            >
+              Admin Panel
+            </Link>
+          )}
+          <button
+            className="bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+            onClick={() =>
+              void signOut().then(() => {
+                router.push("/signin");
+              })
+            }
+          >
+            Sign out
+          </button>
+        </div>
       )}
     </>
   );
