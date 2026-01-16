@@ -7,6 +7,7 @@ import Link from "next/link";
 
 export default function TournamentsPage() {
   const tournaments = useQuery(api.tournaments.listTournaments, {});
+  const allTournaments = useQuery(api.tournaments.listTournaments, { includeArchived: true });
   const myOrg = useQuery(api.organizations.getMyOrganization);
   const createTournament = useMutation(api.tournaments.createTournament);
 
@@ -17,8 +18,10 @@ export default function TournamentsPage() {
   const [tournamentEndDate, setTournamentEndDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const canManage = myOrg?.membership.role === "owner" || myOrg?.membership.role === "admin";
+  const archivedTournaments = allTournaments?.filter((t) => t.archived) ?? [];
 
   const parseDate = (value: string) =>
     value ? new Date(value).getTime() : undefined;
@@ -204,6 +207,57 @@ export default function TournamentsPage() {
           </div>
         )}
       </div>
+
+      {/* Archived Section */}
+      {archivedTournaments.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+          >
+            <span>{showArchived ? "▼" : "▶"}</span>
+            <span>Archived ({archivedTournaments.length})</span>
+          </button>
+
+          {showArchived && (
+            <div className="grid gap-4 mt-4">
+              {archivedTournaments.map((tournament) => (
+                <Link
+                  key={tournament._id}
+                  href={`/tournaments/${tournament._id}`}
+                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-slate-400 dark:hover:border-slate-500 transition-all opacity-75 hover:opacity-100"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-700 dark:text-slate-300">
+                          {tournament.name}
+                        </h3>
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400">
+                          Archived
+                        </span>
+                      </div>
+                      {tournament.description && (
+                        <p className="text-sm text-slate-500 dark:text-slate-500 mt-1">
+                          {tournament.description}
+                        </p>
+                      )}
+                    </div>
+                    <StatusBadge status={tournament.status} />
+                  </div>
+                  {(tournament.startDate || tournament.endDate) && (
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                      {tournament.startDate && new Date(tournament.startDate).toLocaleDateString()}
+                      {tournament.startDate && tournament.endDate && " - "}
+                      {tournament.endDate && new Date(tournament.endDate).toLocaleDateString()}
+                    </p>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

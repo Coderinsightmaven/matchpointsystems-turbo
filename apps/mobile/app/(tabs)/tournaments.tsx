@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 export default function TournamentsScreen() {
   const myOrg = useQuery(api.organizations.getMyOrganization);
   const tournaments = useQuery(api.tournaments.listTournaments, {});
+  const allTournaments = useQuery(api.tournaments.listTournaments, { includeArchived: true });
   const createTournament = useMutation(api.tournaments.createTournament);
   const updateTournament = useMutation(api.tournaments.updateTournament);
   const archiveTournament = useMutation(api.tournaments.archiveTournament);
@@ -22,6 +23,7 @@ export default function TournamentsScreen() {
   const [tournamentStatus, setTournamentStatus] = useState<'draft' | 'active' | 'completed'>('draft');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [matchFormat, setMatchFormat] = useState<'singles' | 'doubles' | 'teams'>('singles');
   const [matchName, setMatchName] = useState('');
@@ -43,10 +45,12 @@ export default function TournamentsScreen() {
 
   const canManage = myOrg?.membership.role === 'owner' || myOrg?.membership.role === 'admin';
   const canScore = myOrg?.membership.role === 'owner' || myOrg?.membership.role === 'admin' || myOrg?.membership.role === 'scorer';
-  const selectedTournament = tournaments?.find((t) => t._id === selectedTournamentId);
+  const selectedTournament = tournaments?.find((t) => t._id === selectedTournamentId) 
+    || allTournaments?.find((t) => t._id === selectedTournamentId);
   const requiredPlayers = matchFormat === 'singles' ? 1 : matchFormat === 'doubles' ? 2 : 0;
   const teamNames = myOrg?.organization.teamNames ?? [];
   const playerNames = myOrg?.organization.playerNames ?? [];
+  const archivedTournaments = allTournaments?.filter((t) => t.archived) ?? [];
 
   const toggleHomePlayer = (name: string) => {
     if (homeSelectedPlayers.includes(name)) {
@@ -238,6 +242,36 @@ export default function TournamentsScreen() {
               </Pressable>
             ))}
           </View>
+
+          {/* Archived Tournaments */}
+          {archivedTournaments.length > 0 && (
+            <>
+              <Pressable style={styles.archivedToggle} onPress={() => setShowArchived(!showArchived)}>
+                <ThemedText style={styles.archivedToggleText}>
+                  {showArchived ? '▼' : '▶'} Archived ({archivedTournaments.length})
+                </ThemedText>
+              </Pressable>
+              {showArchived && (
+                <View style={styles.rowWrap}>
+                  {archivedTournaments.map((tournament) => (
+                    <Pressable
+                      key={tournament._id}
+                      style={[
+                        styles.formatButton,
+                        styles.archivedButton,
+                        selectedTournamentId === tournament._id ? styles.formatButtonActive : null,
+                      ]}
+                      onPress={() => setSelectedTournamentId(tournament._id)}>
+                      <ThemedText
+                        style={selectedTournamentId === tournament._id ? styles.formatButtonTextActive : styles.archivedButtonText}>
+                        {tournament.name}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {selectedTournament && canManage ? (
@@ -505,12 +539,47 @@ export default function TournamentsScreen() {
   );
 }
 
+const VOLLEYBALL_STATS = [
+  { key: 'kill', label: 'K' },
+  { key: 'error', label: 'E' },
+  { key: 'ace', label: 'A' },
+  { key: 'service_error', label: 'SE' },
+  { key: 'dig', label: 'D' },
+  { key: 'block', label: 'B' },
+  { key: 'assist', label: 'AS' },
+] as const;
+
 function ScoringModal({ matchId, onClose }: { matchId: Id<'matches'>; onClose: () => void }) {
   const matchScore = useQuery(api.scoring.getMatchScore, { matchId });
+  const matchStats = useQuery(api.stats.getMatchStats, { matchId });
   const startMatch = useMutation(api.scoring.startMatch);
   const addPoint = useMutation(api.scoring.addPoint);
   const undoPoint = useMutation(api.scoring.undoPoint);
   const endMatch = useMutation(api.scoring.endMatch);
+  const recordStat = useMutation(api.stats.recordStat);
+
+  const [showStats, setShowStats] = useState(false);
+
+  const handleRecordStat = async (playerName: string, side: 'home' | 'away', statType: string) => {
+    try {
+      await recordStat({
+        matchId,
+        playerName,
+        side,
+        statType,
+        setNumber: matchScore?.score?.currentSet,
+      });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getPlayerStat = (playerName: string, statType: string): number => {
+    if (!matchStats) return 0;
+    const player = matchStats.players.find((p) => p.playerName === playerName);
+    return player?.stats[statType] || 0;
+  };
 
   if (matchScore === undefined) {
     return (
@@ -636,6 +705,98 @@ function ScoringModal({ matchId, onClose }: { matchId: Id<'matches'>; onClose: (
               <ThemedText style={styles.endButtonText}>End Match</ThemedText>
             </Pressable>
           </View>
+
+          {/* Stats Panel */}
+          <View style={styles.statsDivider} />
+          <Pressable style={styles.statsToggle} onPress={() => setShowStats(!showStats)}>
+            <ThemedText style={styles.statsToggleText}>Player Stats</ThemedText>
+            <ThemedText style={styles.statsToggleArrow}>{showStats ? '▲' : '▼'}</ThemedText>
+          </Pressable>
+
+          {showStats && (
+            <ScrollView style={styles.statsContainer} nestedScrollEnabled>
+              {/* Home Team */}
+              <ThemedText style={styles.statsTeamLabel}>{homeLabel}</ThemedText>
+              {(home?.players || []).map((player) => (
+                <View key={player} style={styles.statsPlayerCard}>
+                  <ThemedText style={styles.statsPlayerName}>{player}</ThemedText>
+                  <View style={styles.statsButtonRow}>
+                    {VOLLEYBALL_STATS.map((stat) => {
+                      const count = getPlayerStat(player, stat.key);
+                      return (
+                        <Pressable
+                          key={stat.key}
+                          style={styles.statButton}
+                          onPress={() => void handleRecordStat(player, 'home', stat.key)}>
+                          <ThemedText style={styles.statButtonLabel}>{stat.label}</ThemedText>
+                          {count > 0 && (
+                            <View style={styles.statBadge}>
+                              <ThemedText style={styles.statBadgeText}>{count}</ThemedText>
+                            </View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+
+              {/* Away Team */}
+              <ThemedText style={[styles.statsTeamLabel, { marginTop: 16 }]}>{awayLabel}</ThemedText>
+              {(away?.players || []).map((player) => (
+                <View key={player} style={styles.statsPlayerCard}>
+                  <ThemedText style={styles.statsPlayerName}>{player}</ThemedText>
+                  <View style={styles.statsButtonRow}>
+                    {VOLLEYBALL_STATS.map((stat) => {
+                      const count = getPlayerStat(player, stat.key);
+                      return (
+                        <Pressable
+                          key={stat.key}
+                          style={styles.statButton}
+                          onPress={() => void handleRecordStat(player, 'away', stat.key)}>
+                          <ThemedText style={styles.statButtonLabel}>{stat.label}</ThemedText>
+                          {count > 0 && (
+                            <View style={styles.statBadge}>
+                              <ThemedText style={styles.statBadgeText}>{count}</ThemedText>
+                            </View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+
+              {/* Team Totals */}
+              {matchStats && (
+                <View style={styles.teamTotalsCard}>
+                  <ThemedText style={styles.teamTotalsTitle}>Team Totals</ThemedText>
+                  <View style={styles.teamTotalsRow}>
+                    <View style={styles.teamTotalsCol}>
+                      <ThemedText style={styles.teamTotalsLabel}>{homeLabel}</ThemedText>
+                      <View style={styles.statsButtonRow}>
+                        {VOLLEYBALL_STATS.map((stat) => (
+                          <ThemedText key={stat.key} style={styles.teamTotalsStat}>
+                            {stat.label}: {matchStats.teamTotals.home[stat.key] || 0}
+                          </ThemedText>
+                        ))}
+                      </View>
+                    </View>
+                    <View style={styles.teamTotalsCol}>
+                      <ThemedText style={styles.teamTotalsLabel}>{awayLabel}</ThemedText>
+                      <View style={styles.statsButtonRow}>
+                        {VOLLEYBALL_STATS.map((stat) => (
+                          <ThemedText key={stat.key} style={styles.teamTotalsStat}>
+                            {stat.label}: {matchStats.teamTotals.away[stat.key] || 0}
+                          </ThemedText>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          )}
         </>
       )}
 
@@ -768,6 +929,22 @@ const styles = StyleSheet.create({
   archiveButtonText: {
     color: '#b91c1c',
     fontSize: 12,
+  },
+  archivedToggle: {
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  archivedToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.6,
+  },
+  archivedButton: {
+    opacity: 0.7,
+    backgroundColor: '#f3f4f6',
+  },
+  archivedButtonText: {
+    opacity: 0.7,
   },
   matchCard: {
     padding: 12,
@@ -923,5 +1100,107 @@ const styles = StyleSheet.create({
   finalScore: {
     fontSize: 48,
     fontWeight: '700',
+  },
+  // Stats styles
+  statsDivider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
+    marginVertical: 16,
+  },
+  statsToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  statsToggleText: {
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  statsToggleArrow: {
+    opacity: 0.5,
+  },
+  statsContainer: {
+    maxHeight: 300,
+  },
+  statsTeamLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  statsPlayerCard: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  statsPlayerName: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  statsButtonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  statButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 6,
+    backgroundColor: '#fff',
+  },
+  statButtonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statBadge: {
+    backgroundColor: '#111827',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  teamTotalsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    padding: 12,
+    marginTop: 16,
+  },
+  teamTotalsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  teamTotalsRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  teamTotalsCol: {
+    flex: 1,
+  },
+  teamTotalsLabel: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginBottom: 4,
+  },
+  teamTotalsStat: {
+    fontSize: 10,
+    opacity: 0.8,
   },
 });

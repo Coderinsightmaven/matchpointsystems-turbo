@@ -145,4 +145,18 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_sport_and_status", ["sport", "status"])
     .index("by_tournament", ["tournamentId"]),
+
+  // Match stats for tracking player/team statistics
+  matchStats: defineTable({
+    matchId: v.id("matches"),
+    organizationId: v.id("organizations"),
+    playerName: v.string(),
+    side: v.union(v.literal("home"), v.literal("away")),
+    statType: v.string(), // "kill", "error", "ace", "service_error", "dig", "block", "assist"
+    value: v.number(),    // count (usually 1, but allows batch entry)
+    setNumber: v.optional(v.number()), // which set this occurred in
+  })
+    .index("by_match", ["matchId"])
+    .index("by_match_and_player", ["matchId", "playerName"])
+    .index("by_organization", ["organizationId"]),
 });

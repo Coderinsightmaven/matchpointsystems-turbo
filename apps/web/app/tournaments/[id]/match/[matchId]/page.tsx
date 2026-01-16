@@ -1,10 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@workspace/backend/convex/_generated/api";
 import type { Id } from "@workspace/backend/convex/_generated/dataModel";
 import Link from "next/link";
 import { use } from "react";
+
+const VOLLEYBALL_STATS = [
+  { key: "kill", label: "K", fullLabel: "Kill" },
+  { key: "error", label: "E", fullLabel: "Error" },
+  { key: "ace", label: "A", fullLabel: "Ace" },
+  { key: "service_error", label: "SE", fullLabel: "Svc Err" },
+  { key: "dig", label: "D", fullLabel: "Dig" },
+  { key: "block", label: "B", fullLabel: "Block" },
+  { key: "assist", label: "AS", fullLabel: "Assist" },
+] as const;
 
 export default function MatchScoringPage({
   params,
@@ -17,14 +28,38 @@ export default function MatchScoringPage({
 
   const tournament = useQuery(api.tournaments.getTournament, { tournamentId });
   const matchScore = useQuery(api.scoring.getMatchScore, { matchId: matchIdTyped });
+  const matchStats = useQuery(api.stats.getMatchStats, { matchId: matchIdTyped });
   const myOrg = useQuery(api.organizations.getMyOrganization);
 
   const startMatch = useMutation(api.scoring.startMatch);
   const addPoint = useMutation(api.scoring.addPoint);
   const undoPoint = useMutation(api.scoring.undoPoint);
   const endMatch = useMutation(api.scoring.endMatch);
+  const recordStat = useMutation(api.stats.recordStat);
+
+  const [showStats, setShowStats] = useState(false);
 
   const canScore = myOrg?.membership.role === "owner" || myOrg?.membership.role === "admin" || myOrg?.membership.role === "scorer";
+
+  const handleRecordStat = async (playerName: string, side: "home" | "away", statType: string) => {
+    try {
+      await recordStat({
+        matchId: matchIdTyped,
+        playerName,
+        side,
+        statType,
+        setNumber: matchScore?.score?.currentSet,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getPlayerStat = (playerName: string, statType: string): number => {
+    if (!matchStats) return 0;
+    const player = matchStats.players.find((p) => p.playerName === playerName);
+    return player?.stats[statType] || 0;
+  };
 
   if (matchScore === undefined || tournament === undefined) {
     return (
@@ -201,7 +236,7 @@ export default function MatchScoringPage({
           )}
 
           {canScore && (
-            <div className="flex gap-4 justify-center">
+            <div className="flex gap-4 justify-center mb-6">
               {matchScore.canUndo && (
                 <button
                   onClick={() => void handleUndo()}
@@ -218,6 +253,143 @@ export default function MatchScoringPage({
               </button>
             </div>
           )}
+
+          {/* Stats Panel */}
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+            <button
+              onClick={() => setShowStats(!showStats)}
+              className="w-full flex items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4"
+            >
+              <span>Player Stats</span>
+              <span className="text-slate-400">{showStats ? "▲" : "▼"}</span>
+            </button>
+
+            {showStats && (
+              <div className="space-y-6">
+                {/* Home Team Stats */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                    {homeLabel}
+                  </p>
+                  {(home?.players || []).length === 0 ? (
+                    <p className="text-xs text-slate-400">No players</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {(home?.players || []).map((player) => (
+                        <div key={player} className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3">
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            {player}
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {VOLLEYBALL_STATS.map((stat) => {
+                              const count = getPlayerStat(player, stat.key);
+                              return (
+                                <button
+                                  key={stat.key}
+                                  onClick={() => void handleRecordStat(player, "home", stat.key)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  title={stat.fullLabel}
+                                >
+                                  <span className="font-medium">{stat.label}</span>
+                                  {count > 0 && (
+                                    <span className="bg-slate-800 text-white px-1.5 rounded text-xs">
+                                      {count}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Away Team Stats */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                    {awayLabel}
+                  </p>
+                  {(away?.players || []).length === 0 ? (
+                    <p className="text-xs text-slate-400">No players</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {(away?.players || []).map((player) => (
+                        <div key={player} className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3">
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            {player}
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {VOLLEYBALL_STATS.map((stat) => {
+                              const count = getPlayerStat(player, stat.key);
+                              return (
+                                <button
+                                  key={stat.key}
+                                  onClick={() => void handleRecordStat(player, "away", stat.key)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  title={stat.fullLabel}
+                                >
+                                  <span className="font-medium">{stat.label}</span>
+                                  {count > 0 && (
+                                    <span className="bg-slate-800 text-white px-1.5 rounded text-xs">
+                                      {count}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Team Totals */}
+                {matchStats && (
+                  <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+                    <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">
+                      Team Totals
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">{homeLabel}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {VOLLEYBALL_STATS.map((stat) => (
+                            <span key={stat.key} className="text-xs">
+                              <span className="font-medium">{stat.label}:</span>{" "}
+                              {matchStats.teamTotals.home[stat.key] || 0}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">{awayLabel}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {VOLLEYBALL_STATS.map((stat) => (
+                            <span key={stat.key} className="text-xs">
+                              <span className="font-medium">{stat.label}:</span>{" "}
+                              {matchStats.teamTotals.away[stat.key] || 0}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-center">
+                  <Link
+                    href={`/tournaments/${tournamentId}/match/${matchId}/stats`}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    View & Edit Full Stats →
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
 
@@ -242,7 +414,7 @@ export default function MatchScoringPage({
             </div>
           </div>
           {matchScore.score.setHistory.length > 0 && (
-            <div className="text-sm text-slate-500">
+            <div className="text-sm text-slate-500 mb-6">
               {matchScore.score.setHistory.map((set, idx) => (
                 <span key={idx}>
                   {idx > 0 && ", "}
@@ -251,6 +423,12 @@ export default function MatchScoringPage({
               ))}
             </div>
           )}
+          <Link
+            href={`/tournaments/${tournamentId}/match/${matchId}/stats`}
+            className="inline-block px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition-colors"
+          >
+            View & Edit Stats
+          </Link>
         </div>
       )}
     </div>

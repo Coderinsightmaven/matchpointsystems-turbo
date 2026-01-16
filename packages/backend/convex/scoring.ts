@@ -53,6 +53,15 @@ export const startMatch = mutation({
     // Only scorers, admins, and owners can score
     await requireOrgRole(ctx, match.organizationId, ["owner", "admin", "scorer"]);
 
+    // Check tournament status - can't start matches in draft tournaments
+    const tournament = await ctx.db.get(match.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found");
+    }
+    if (tournament.status === "draft") {
+      throw new Error("Cannot start matches in a draft tournament. Set the tournament to active first.");
+    }
+
     if (match.status !== "scheduled") {
       throw new Error("Match has already started or completed");
     }
