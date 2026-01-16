@@ -24,10 +24,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="tournaments"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Tournaments',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="star.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="roster"
+        options={{
+          title: 'Roster',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.2.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="members"
+        options={{
+          title: 'Members',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.3.fill" color={color} />,
         }}
       />
     </Tabs>

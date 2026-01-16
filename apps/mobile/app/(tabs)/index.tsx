@@ -3,7 +3,6 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '@workspace/backend/convex/_generated/api';
-import type { Id } from '@workspace/backend/convex/_generated/dataModel';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -91,7 +90,7 @@ function OrganizationGate() {
     return <CreateOrganizationForm />;
   }
 
-  return <OrganizationDashboard org={myOrg} />;
+  return <Dashboard org={myOrg} />;
 }
 
 function CreateOrganizationForm() {
@@ -164,28 +163,30 @@ function CreateOrganizationForm() {
 
 type OrgData = {
   organization: {
-    _id: Id<'organizations'>;
-    _creationTime: number;
+    _id: string;
     name: string;
     description?: string;
-    createdBy: Id<'users'>;
-    teamNames?: string[];
-    playerNames?: string[];
   };
   membership: {
-    _id: Id<'organizationMembers'>;
-    _creationTime: number;
-    organizationId: Id<'organizations'>;
-    userId: Id<'users'>;
     role: 'owner' | 'admin' | 'scorer';
   };
 };
 
-function OrganizationDashboard({ org }: { org: OrgData }) {
+function Dashboard({ org }: { org: OrgData }) {
   const { signOut } = useAuthActions();
-  const [showRoster, setShowRoster] = useState(false);
-  const [showMembers, setShowMembers] = useState(false);
-  const canManage = org.membership.role === 'owner' || org.membership.role === 'admin';
+  const tournaments = useQuery(api.tournaments.listTournaments, {});
+  const members = useQuery(api.organizations.listMembers, {
+    organizationId: org.organization._id as Parameters<typeof api.organizations.listMembers>[0]['organizationId'],
+  });
+  const roster = useQuery(api.organizations.getRoster, {
+    organizationId: org.organization._id as Parameters<typeof api.organizations.getRoster>[0]['organizationId'],
+  });
+
+  const activeTournaments = tournaments?.filter((t) => t.status === 'active').length ?? 0;
+  const totalTournaments = tournaments?.length ?? 0;
+  const totalMembers = members?.length ?? 0;
+  const totalTeams = roster?.teamNames.length ?? 0;
+  const totalPlayers = roster?.playerNames.length ?? 0;
 
   return (
     <View style={styles.section}>
@@ -202,621 +203,33 @@ function OrganizationDashboard({ org }: { org: OrgData }) {
         </Pressable>
       </View>
 
-      {canManage ? (
-        <View style={styles.row}>
-          <Pressable
-            style={[styles.formatButton, showRoster ? styles.formatButtonActive : null]}
-            onPress={() => setShowRoster(!showRoster)}>
-            <ThemedText style={showRoster ? styles.formatButtonTextActive : styles.formatButtonText}>
-              {showRoster ? 'Hide Roster' : 'Roster'}
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            style={[styles.formatButton, showMembers ? styles.formatButtonActive : null]}
-            onPress={() => setShowMembers(!showMembers)}>
-            <ThemedText style={showMembers ? styles.formatButtonTextActive : styles.formatButtonText}>
-              {showMembers ? 'Hide Members' : 'Members'}
-            </ThemedText>
-          </Pressable>
+      <View style={styles.statsGrid}>
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statValue}>{activeTournaments}</ThemedText>
+          <ThemedText style={styles.statLabel}>Active Tournaments</ThemedText>
         </View>
-      ) : null}
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statValue}>{totalTournaments}</ThemedText>
+          <ThemedText style={styles.statLabel}>Total Tournaments</ThemedText>
+        </View>
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statValue}>{totalMembers}</ThemedText>
+          <ThemedText style={styles.statLabel}>Members</ThemedText>
+        </View>
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statValue}>{totalTeams}</ThemedText>
+          <ThemedText style={styles.statLabel}>Teams</ThemedText>
+        </View>
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statValue}>{totalPlayers}</ThemedText>
+          <ThemedText style={styles.statLabel}>Players</ThemedText>
+        </View>
+      </View>
 
-      {showRoster && canManage ? (
-        <RosterManagement organizationId={org.organization._id} />
-      ) : null}
-
-      {showMembers && canManage ? (
-        <MemberManagement organizationId={org.organization._id} />
-      ) : null}
-
-      <TournamentSection canManage={canManage} />
+      <ThemedText style={styles.helperText}>
+        Use the tabs below to manage tournaments, roster, and members.
+      </ThemedText>
     </View>
-  );
-}
-
-function RosterManagement({ organizationId }: { organizationId: Id<'organizations'> }) {
-  const roster = useQuery(api.organizations.getRoster, { organizationId });
-  const addTeamName = useMutation(api.organizations.addTeamName);
-  const removeTeamName = useMutation(api.organizations.removeTeamName);
-  const addPlayerName = useMutation(api.organizations.addPlayerName);
-  const removePlayerName = useMutation(api.organizations.removePlayerName);
-
-  const [newTeamName, setNewTeamName] = useState('');
-  const [newPlayerName, setNewPlayerName] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const handleAddTeam = async () => {
-    if (!newTeamName.trim()) return;
-    setError(null);
-    try {
-      await addTeamName({ organizationId, name: newTeamName.trim() });
-      setNewTeamName('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add team');
-    }
-  };
-
-  const handleAddPlayer = async () => {
-    if (!newPlayerName.trim()) return;
-    setError(null);
-    try {
-      await addPlayerName({ organizationId, name: newPlayerName.trim() });
-      setNewPlayerName('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add player');
-    }
-  };
-
-  return (
-    <View style={styles.formCard}>
-      <ThemedText style={styles.sectionTitle}>Organization Roster</ThemedText>
-      {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
-
-      <ThemedText style={styles.sectionLabel}>Team Names</ThemedText>
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.flexItem]}
-          placeholder="Add team name"
-          value={newTeamName}
-          onChangeText={setNewTeamName}
-        />
-        <Pressable style={styles.primaryButton} onPress={() => void handleAddTeam()}>
-          <ThemedText style={styles.primaryButtonText}>Add</ThemedText>
-        </Pressable>
-      </View>
-      <View style={styles.rowWrap}>
-        {roster?.teamNames.map((name) => (
-          <Pressable
-            key={name}
-            style={styles.tagButton}
-            onPress={() => void removeTeamName({ organizationId, name })}>
-            <ThemedText style={styles.tagText}>{name} x</ThemedText>
-          </Pressable>
-        ))}
-      </View>
-
-      <ThemedText style={styles.sectionLabel}>Player Names</ThemedText>
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.flexItem]}
-          placeholder="Add player name"
-          value={newPlayerName}
-          onChangeText={setNewPlayerName}
-        />
-        <Pressable style={styles.primaryButton} onPress={() => void handleAddPlayer()}>
-          <ThemedText style={styles.primaryButtonText}>Add</ThemedText>
-        </Pressable>
-      </View>
-      <View style={styles.rowWrap}>
-        {roster?.playerNames.map((name) => (
-          <Pressable
-            key={name}
-            style={styles.tagButton}
-            onPress={() => void removePlayerName({ organizationId, name })}>
-            <ThemedText style={styles.tagText}>{name} x</ThemedText>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function MemberManagement({ organizationId }: { organizationId: Id<'organizations'> }) {
-  const members = useQuery(api.organizations.listMembers, { organizationId });
-  const inviteMember = useMutation(api.organizations.inviteMember);
-
-  const [inviteUserId, setInviteUserId] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'scorer'>('scorer');
-  const [error, setError] = useState<string | null>(null);
-  const [isInviting, setIsInviting] = useState(false);
-
-  const handleInvite = async () => {
-    if (!inviteUserId.trim()) return;
-    setError(null);
-    setIsInviting(true);
-    try {
-      await inviteMember({
-        organizationId,
-        userId: inviteUserId.trim() as Id<'users'>,
-        role: inviteRole,
-      });
-      setInviteUserId('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to invite member');
-    } finally {
-      setIsInviting(false);
-    }
-  };
-
-  return (
-    <View style={styles.formCard}>
-      <ThemedText style={styles.sectionTitle}>Organization Members</ThemedText>
-      {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
-
-      <ThemedText style={styles.sectionLabel}>Invite a member</ThemedText>
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.flexItem]}
-          placeholder="User ID"
-          value={inviteUserId}
-          onChangeText={setInviteUserId}
-        />
-        <Pressable
-          style={[styles.formatButton, inviteRole === 'admin' ? styles.formatButtonActive : null]}
-          onPress={() => setInviteRole('admin')}>
-          <ThemedText style={inviteRole === 'admin' ? styles.formatButtonTextActive : styles.formatButtonText}>
-            Admin
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          style={[styles.formatButton, inviteRole === 'scorer' ? styles.formatButtonActive : null]}
-          onPress={() => setInviteRole('scorer')}>
-          <ThemedText style={inviteRole === 'scorer' ? styles.formatButtonTextActive : styles.formatButtonText}>
-            Scorer
-          </ThemedText>
-        </Pressable>
-      </View>
-      <Pressable
-        style={[styles.primaryButton, isInviting ? styles.primaryButtonDisabled : null]}
-        onPress={() => void handleInvite()}
-        disabled={isInviting}>
-        <ThemedText style={styles.primaryButtonText}>{isInviting ? 'Inviting...' : 'Invite'}</ThemedText>
-      </Pressable>
-
-      <ThemedText style={styles.sectionLabel}>Current members</ThemedText>
-      {members === undefined ? (
-        <ThemedText style={styles.helperText}>Loading...</ThemedText>
-      ) : (
-        members.map((member) => (
-          <View key={member._id} style={styles.memberRow}>
-            <ThemedText>{member.email ?? 'Unknown'}</ThemedText>
-            <ThemedText style={styles.helperText}>{member.role}</ThemedText>
-          </View>
-        ))
-      )}
-    </View>
-  );
-}
-
-function TournamentSection({ canManage }: { canManage: boolean }) {
-  const [selectedTournamentId, setSelectedTournamentId] = useState<Id<'tournaments'> | null>(null);
-  const [tournamentName, setTournamentName] = useState('');
-  const [tournamentDescription, setTournamentDescription] = useState('');
-  const [tournamentStatus, setTournamentStatus] = useState<'draft' | 'active' | 'completed'>('draft');
-  const [tournamentStartDate, setTournamentStartDate] = useState('');
-  const [tournamentEndDate, setTournamentEndDate] = useState('');
-  const [tournamentError, setTournamentError] = useState<string | null>(null);
-  const [isCreatingTournament, setIsCreatingTournament] = useState(false);
-
-  const [format, setFormat] = useState<'singles' | 'doubles' | 'teams'>('singles');
-  const [name, setName] = useState('');
-  const [homeTeamName, setHomeTeamName] = useState('');
-  const [awayTeamName, setAwayTeamName] = useState('');
-  const [homePlayers, setHomePlayers] = useState('');
-  const [awayPlayers, setAwayPlayers] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const tournaments = useQuery(api.tournaments.listTournaments, {});
-  const createTournament = useMutation(api.tournaments.createTournament);
-  const updateTournament = useMutation(api.tournaments.updateTournament);
-  const archiveTournament = useMutation(api.tournaments.archiveTournament);
-  const matchesByTournament = useQuery(
-    api.matches.listMatchesByTournament,
-    selectedTournamentId ? { tournamentId: selectedTournamentId } : 'skip',
-  );
-  const createMatch = useMutation(api.matches.createMatch);
-
-  const visibleMatches = selectedTournamentId ? matchesByTournament : undefined;
-  const selectedTournament = tournaments?.find(
-    (tournament) => tournament._id === selectedTournamentId,
-  );
-
-  const requiredPlayers = format === 'singles' ? 1 : format === 'doubles' ? 2 : 0;
-
-  const parsePlayers = (value: string) =>
-    value
-      .split(',')
-      .map((player) => player.trim())
-      .filter(Boolean);
-
-  const buildParticipants = () => {
-    const homePlayersList = parsePlayers(homePlayers);
-    const awayPlayersList = parsePlayers(awayPlayers);
-
-    const homeParticipant = {
-      side: 'home' as const,
-      players: homePlayersList,
-      ...(format === 'teams' ? { teamName: homeTeamName.trim() } : {}),
-    };
-    const awayParticipant = {
-      side: 'away' as const,
-      players: awayPlayersList,
-      ...(format === 'teams' ? { teamName: awayTeamName.trim() } : {}),
-    };
-
-    return { homeParticipant, awayParticipant };
-  };
-
-  const parseDate = (value: string) => (value ? new Date(value).getTime() : undefined);
-
-  const handleCreateTournament = async () => {
-    setTournamentError(null);
-
-    const trimmedName = tournamentName.trim();
-    if (!trimmedName) {
-      setTournamentError('Tournament name is required.');
-      return;
-    }
-
-    const startDate = parseDate(tournamentStartDate);
-    const endDate = parseDate(tournamentEndDate);
-    if (startDate !== undefined && endDate !== undefined && startDate > endDate) {
-      setTournamentError('Start date must be before end date.');
-      return;
-    }
-
-    setIsCreatingTournament(true);
-    try {
-      const id = await createTournament({
-        name: trimmedName,
-        description: tournamentDescription.trim() || undefined,
-        status: tournamentStatus,
-        startDate,
-        endDate,
-      });
-      setTournamentName('');
-      setTournamentDescription('');
-      setTournamentStatus('draft');
-      setTournamentStartDate('');
-      setTournamentEndDate('');
-      setSelectedTournamentId(id);
-    } catch (caught) {
-      setTournamentError(caught instanceof Error ? caught.message : 'Unable to create tournament.');
-    } finally {
-      setIsCreatingTournament(false);
-    }
-  };
-
-  const handleStatusUpdate = async (status: 'draft' | 'active' | 'completed') => {
-    if (!selectedTournamentId) {
-      return;
-    }
-
-    try {
-      await updateTournament({ tournamentId: selectedTournamentId, status });
-    } catch (caught) {
-      setTournamentError(caught instanceof Error ? caught.message : 'Unable to update tournament.');
-    }
-  };
-
-  const handleCreateMatch = async () => {
-    setError(null);
-
-    const { homeParticipant, awayParticipant } = buildParticipants();
-
-    if (format === 'teams') {
-      if (!homeParticipant.teamName || !awayParticipant.teamName) {
-        setError('Team names are required for team matches.');
-        return;
-      }
-    } else if (
-      homeParticipant.players.length !== requiredPlayers ||
-      awayParticipant.players.length !== requiredPlayers
-    ) {
-      setError(`${format} format requires ${requiredPlayers} player(s) per side.`);
-      return;
-    }
-
-    if (!selectedTournamentId) {
-      setError('Please select a tournament first.');
-      return;
-    }
-
-    const trimmedName = name.trim();
-    const payload = {
-      format,
-      participants: [homeParticipant, awayParticipant],
-      tournamentId: selectedTournamentId,
-      ...(trimmedName ? { name: trimmedName } : {}),
-    };
-
-    setIsSubmitting(true);
-    try {
-      await createMatch(payload);
-      setName('');
-      setHomeTeamName('');
-      setAwayTeamName('');
-      setHomePlayers('');
-      setAwayPlayers('');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to create match.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <>
-      {canManage ? (
-        <View style={styles.formCard}>
-          <ThemedText style={styles.sectionTitle}>Create a tournament</ThemedText>
-          <ThemedText style={styles.sectionLabel}>Tournament name</ThemedText>
-          <TextInput
-            style={styles.input}
-            placeholder="Summer Spike Classic"
-            value={tournamentName}
-            onChangeText={setTournamentName}
-          />
-          <ThemedText style={styles.sectionLabel}>Description (optional)</ThemedText>
-          <TextInput
-            style={styles.input}
-            placeholder="Open division tournament."
-            value={tournamentDescription}
-            onChangeText={setTournamentDescription}
-          />
-          <ThemedText style={styles.sectionLabel}>Status</ThemedText>
-          <View style={styles.row}>
-            {(['draft', 'active', 'completed'] as const).map((option) => (
-              <Pressable
-                key={option}
-                style={[
-                  styles.formatButton,
-                  tournamentStatus === option ? styles.formatButtonActive : null,
-                ]}
-                onPress={() => setTournamentStatus(option)}>
-                <ThemedText
-                  style={
-                    tournamentStatus === option ? styles.formatButtonTextActive : styles.formatButtonText
-                  }>
-                  {option.charAt(0).toUpperCase() + option.slice(1)}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.row}>
-            <View style={styles.flexItem}>
-              <ThemedText style={styles.sectionLabel}>Start date (YYYY-MM-DD)</ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="2026-05-01"
-                value={tournamentStartDate}
-                onChangeText={setTournamentStartDate}
-              />
-            </View>
-            <View style={styles.flexItem}>
-              <ThemedText style={styles.sectionLabel}>End date (YYYY-MM-DD)</ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="2026-05-03"
-                value={tournamentEndDate}
-                onChangeText={setTournamentEndDate}
-              />
-            </View>
-          </View>
-          {tournamentError ? <ThemedText style={styles.errorText}>{tournamentError}</ThemedText> : null}
-          <Pressable
-            style={[styles.primaryButton, isCreatingTournament ? styles.primaryButtonDisabled : null]}
-            onPress={() => void handleCreateTournament()}
-            disabled={isCreatingTournament}>
-            <ThemedText style={styles.primaryButtonText}>
-              {isCreatingTournament ? 'Creating tournament...' : 'Create tournament'}
-            </ThemedText>
-          </Pressable>
-        </View>
-      ) : null}
-
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionTitle}>Select a tournament</ThemedText>
-        <View style={styles.rowWrap}>
-          {tournaments?.length === 0 ? (
-            <ThemedText style={styles.helperText}>No tournaments yet. Create one above.</ThemedText>
-          ) : null}
-          {tournaments?.map((tournament) => (
-            <Pressable
-              key={tournament._id}
-              style={[
-                styles.formatButton,
-                selectedTournamentId === tournament._id ? styles.formatButtonActive : null,
-              ]}
-              onPress={() => setSelectedTournamentId(tournament._id)}>
-              <ThemedText
-                style={
-                  selectedTournamentId === tournament._id
-                    ? styles.formatButtonTextActive
-                    : styles.formatButtonText
-                }>
-                {tournament.name}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </View>
-        {selectedTournament && canManage ? (
-          <View style={styles.statusCard}>
-            <ThemedText style={styles.helperText}>
-              Current status: {selectedTournament.status}
-            </ThemedText>
-            <View style={styles.row}>
-              {(['draft', 'active', 'completed'] as const).map((status) => (
-                <Pressable
-                  key={status}
-                  style={[
-                    styles.formatButton,
-                    selectedTournament.status === status ? styles.formatButtonActive : null,
-                  ]}
-                  onPress={() => void handleStatusUpdate(status)}>
-                  <ThemedText
-                    style={
-                      selectedTournament.status === status
-                        ? styles.formatButtonTextActive
-                        : styles.formatButtonText
-                    }>
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </View>
-            <Pressable
-              style={styles.archiveButton}
-              onPress={() => {
-                void archiveTournament({ tournamentId: selectedTournament._id });
-                setSelectedTournamentId(null);
-              }}>
-              <ThemedText style={styles.archiveButtonText}>Archive tournament</ThemedText>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-
-      {canManage && selectedTournamentId ? (
-        <View style={styles.formCard}>
-          <ThemedText style={styles.sectionTitle}>
-            Create a match in {selectedTournament?.name}
-          </ThemedText>
-          <ThemedText style={styles.sectionLabel}>Match name (optional)</ThemedText>
-          <TextInput
-            style={styles.input}
-            placeholder="Friday Night Volleyball"
-            value={name}
-            onChangeText={setName}
-          />
-
-          <ThemedText style={styles.sectionLabel}>Format</ThemedText>
-          <View style={styles.row}>
-            {(['singles', 'doubles', 'teams'] as const).map((option) => (
-              <Pressable
-                key={option}
-                style={[
-                  styles.formatButton,
-                  format === option ? styles.formatButtonActive : null,
-                ]}
-                onPress={() => setFormat(option)}>
-                <ThemedText style={format === option ? styles.formatButtonTextActive : styles.formatButtonText}>
-                  {option.charAt(0).toUpperCase() + option.slice(1)}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </View>
-          {format !== 'teams' ? (
-            <ThemedText style={styles.helperText}>
-              Enter exactly {requiredPlayers} player(s) per side.
-            </ThemedText>
-          ) : null}
-
-          {format === 'teams' ? (
-            <View style={styles.row}>
-              <View style={styles.flexItem}>
-                <ThemedText style={styles.sectionLabel}>Home team</ThemedText>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Home team"
-                  value={homeTeamName}
-                  onChangeText={setHomeTeamName}
-                />
-              </View>
-              <View style={styles.flexItem}>
-                <ThemedText style={styles.sectionLabel}>Away team</ThemedText>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Away team"
-                  value={awayTeamName}
-                  onChangeText={setAwayTeamName}
-                />
-              </View>
-            </View>
-          ) : null}
-
-          <View style={styles.row}>
-            <View style={styles.flexItem}>
-              <ThemedText style={styles.sectionLabel}>Home players</ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="Comma-separated names"
-                value={homePlayers}
-                onChangeText={setHomePlayers}
-              />
-            </View>
-            <View style={styles.flexItem}>
-              <ThemedText style={styles.sectionLabel}>Away players</ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="Comma-separated names"
-                value={awayPlayers}
-                onChangeText={setAwayPlayers}
-              />
-            </View>
-          </View>
-
-          {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
-
-          <Pressable
-            style={[styles.primaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}
-            onPress={() => void handleCreateMatch()}
-            disabled={isSubmitting}>
-            <ThemedText style={styles.primaryButtonText}>
-              {isSubmitting ? 'Creating match...' : 'Create match'}
-            </ThemedText>
-          </Pressable>
-        </View>
-      ) : canManage && !selectedTournamentId ? (
-        <ThemedText style={styles.helperText}>Select a tournament above to create matches.</ThemedText>
-      ) : null}
-
-      <View style={styles.matchesSection}>
-        <ThemedText type="title">Recent matches</ThemedText>
-        {visibleMatches === undefined ? (
-          <ThemedText style={styles.helperText}>Loading matches...</ThemedText>
-        ) : visibleMatches.length ? (
-          visibleMatches.map((match) => {
-            const home = match.participants.find((participant) => participant.side === 'home');
-            const away = match.participants.find((participant) => participant.side === 'away');
-            const homeLabel = home?.teamName || home?.players.join(', ') || 'Home';
-            const awayLabel = away?.teamName || away?.players.join(', ') || 'Away';
-            const formatLabel = match.format.charAt(0).toUpperCase() + match.format.slice(1);
-            const tournamentLabel =
-              tournaments?.find((tournament) => tournament._id === match.tournamentId)?.name ??
-              'Tournament';
-
-            return (
-              <View key={match._id} style={styles.matchCard}>
-                <ThemedText style={styles.matchTitle}>{match.name || 'Volleyball Match'}</ThemedText>
-                <ThemedText style={styles.helperText}>
-                  {formatLabel} · {match.status}
-                </ThemedText>
-                <ThemedText style={styles.helperText}>{tournamentLabel}</ThemedText>
-                <ThemedText style={styles.matchSubtitle}>
-                  {homeLabel} vs {awayLabel}
-                </ThemedText>
-              </View>
-            );
-          })
-        ) : (
-          <ThemedText style={styles.helperText}>
-            No matches yet.{canManage ? ' Create the first one above.' : ''}
-          </ThemedText>
-        )}
-      </View>
-    </>
   );
 }
 
@@ -875,35 +288,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rowWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
   flexItem: {
     flex: 1,
-  },
-  formatButton: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#fff',
-  },
-  formatButtonActive: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  formatButtonText: {
-    opacity: 0.8,
-  },
-  formatButtonTextActive: {
-    color: '#fff',
   },
   primaryButton: {
     backgroundColor: '#111827',
@@ -934,57 +320,27 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#b91c1c',
   },
-  statusCard: {
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#fff',
-  },
-  matchesSection: {
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
-  matchCard: {
-    padding: 12,
+  statCard: {
+    padding: 16,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#fff',
-    gap: 4,
-  },
-  matchTitle: {
-    fontWeight: '600',
-  },
-  matchSubtitle: {
-    fontSize: 13,
-  },
-  tagButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#fff',
-  },
-  tagText: {
-    fontSize: 12,
-  },
-  memberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  archiveButton: {
-    marginTop: 8,
-    paddingVertical: 8,
+    minWidth: 100,
     alignItems: 'center',
   },
-  archiveButtonText: {
-    color: '#b91c1c',
+  statValue: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  statLabel: {
     fontSize: 12,
+    opacity: 0.7,
+    marginTop: 4,
   },
 });
