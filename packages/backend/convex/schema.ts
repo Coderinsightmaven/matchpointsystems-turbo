@@ -43,4 +43,26 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_role", ["roleId"])
     .index("by_active", ["isActive"]),
+
+  matches: defineTable({
+    sport: v.literal("volleyball"),
+    format: v.union(
+      v.literal("singles"),
+      v.literal("doubles"),
+      v.literal("teams"),
+    ),
+    status: v.union(v.literal("scheduled"), v.literal("completed")),
+    name: v.optional(v.string()),
+    participants: v.array(
+      v.object({
+        side: v.union(v.literal("home"), v.literal("away")),
+        teamName: v.optional(v.string()),
+        players: v.array(v.string()),
+      }),
+    ),
+    createdBy: v.optional(v.id("users")),
+  })
+    .index("by_sport", ["sport"])
+    .index("by_status", ["status"])
+    .index("by_sport_and_status", ["sport", "status"]),
 });

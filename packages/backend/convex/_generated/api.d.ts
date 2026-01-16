@@ -12,6 +12,7 @@ import type * as adminAccess from "../adminAccess.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as matches from "../matches.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as permissions from "../permissions.js";
 import type * as roles from "../roles.js";
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
   "lib/auth": typeof lib_auth;
+  matches: typeof matches;
   myFunctions: typeof myFunctions;
   permissions: typeof permissions;
   roles: typeof roles;
