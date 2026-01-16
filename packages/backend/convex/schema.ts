@@ -44,7 +44,29 @@ export default defineSchema({
     .index("by_role", ["roleId"])
     .index("by_active", ["isActive"]),
 
+  // Organizations table
+  organizations: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    createdBy: v.id("users"),
+  }).index("by_name", ["name"]),
+
+  // Organization members - links users to orgs with roles
+  organizationMembers: defineTable({
+    organizationId: v.id("organizations"),
+    userId: v.id("users"),
+    role: v.union(
+      v.literal("owner"),
+      v.literal("admin"),
+      v.literal("scorer"),
+    ),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_user", ["userId"])
+    .index("by_organization_and_user", ["organizationId", "userId"]),
+
   tournaments: defineTable({
+    organizationId: v.id("organizations"),
     sport: v.literal("volleyball"),
     name: v.string(),
     description: v.optional(v.string()),
@@ -57,10 +79,12 @@ export default defineSchema({
     endDate: v.optional(v.number()),
     createdBy: v.optional(v.id("users")),
   })
+    .index("by_organization", ["organizationId"])
     .index("by_sport", ["sport"])
     .index("by_status", ["status"]),
 
   matches: defineTable({
+    organizationId: v.id("organizations"),
     sport: v.literal("volleyball"),
     format: v.union(
       v.literal("singles"),
@@ -79,6 +103,7 @@ export default defineSchema({
     tournamentId: v.optional(v.id("tournaments")),
     createdBy: v.optional(v.id("users")),
   })
+    .index("by_organization", ["organizationId"])
     .index("by_sport", ["sport"])
     .index("by_status", ["status"])
     .index("by_sport_and_status", ["sport", "status"])

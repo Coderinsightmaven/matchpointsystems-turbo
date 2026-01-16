@@ -19,7 +19,7 @@ export default function HomeScreen() {
       </Unauthenticated>
       <Authenticated>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <SignedInPanel />
+          <OrganizationGate />
         </ScrollView>
       </Authenticated>
     </ThemedView>
@@ -80,8 +80,130 @@ function SignInForm() {
   );
 }
 
-function SignedInPanel() {
+function OrganizationGate() {
+  const myOrg = useQuery(api.organizations.getMyOrganization);
+
+  if (myOrg === undefined) {
+    return <ThemedText style={styles.helperText}>Loading...</ThemedText>;
+  }
+
+  if (myOrg === null) {
+    return <CreateOrganizationForm />;
+  }
+
+  return <OrganizationDashboard org={myOrg} />;
+}
+
+function CreateOrganizationForm() {
+  const createOrganization = useMutation(api.organizations.createOrganization);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    setError(null);
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Organization name is required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await createOrganization({
+        name: trimmedName,
+        description: description.trim() || undefined,
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to create organization.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.card}>
+        <ThemedText type="title">Welcome</ThemedText>
+        <ThemedText style={styles.subtitle}>
+          Create your organization to start managing tournaments.
+        </ThemedText>
+      </View>
+
+      <View style={styles.formCard}>
+        <ThemedText style={styles.sectionTitle}>Create your organization</ThemedText>
+        <ThemedText style={styles.sectionLabel}>Organization name</ThemedText>
+        <TextInput
+          style={styles.input}
+          placeholder="AVP League"
+          value={name}
+          onChangeText={setName}
+        />
+        <ThemedText style={styles.sectionLabel}>Description (optional)</ThemedText>
+        <TextInput
+          style={styles.input}
+          placeholder="Professional volleyball organization"
+          value={description}
+          onChangeText={setDescription}
+        />
+        {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
+        <Pressable
+          style={[styles.primaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}
+          onPress={() => void handleSubmit()}
+          disabled={isSubmitting}>
+          <ThemedText style={styles.primaryButtonText}>
+            {isSubmitting ? 'Creating organization...' : 'Create organization'}
+          </ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+type OrgData = {
+  organization: {
+    _id: Id<'organizations'>;
+    _creationTime: number;
+    name: string;
+    description?: string;
+    createdBy: Id<'users'>;
+  };
+  membership: {
+    _id: Id<'organizationMembers'>;
+    _creationTime: number;
+    organizationId: Id<'organizations'>;
+    userId: Id<'users'>;
+    role: 'owner' | 'admin' | 'scorer';
+  };
+};
+
+function OrganizationDashboard({ org }: { org: OrgData }) {
   const { signOut } = useAuthActions();
+  const canManage = org.membership.role === 'owner' || org.membership.role === 'admin';
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.headerRow}>
+        <View style={styles.flexItem}>
+          <ThemedText type="title">{org.organization.name}</ThemedText>
+          {org.organization.description ? (
+            <ThemedText style={styles.subtitle}>{org.organization.description}</ThemedText>
+          ) : null}
+          <ThemedText style={styles.helperText}>Your role: {org.membership.role}</ThemedText>
+        </View>
+        <Pressable style={styles.secondaryButton} onPress={() => void signOut()}>
+          <ThemedText>Sign out</ThemedText>
+        </Pressable>
+      </View>
+
+      <TournamentSection canManage={canManage} />
+    </View>
+  );
+}
+
+function TournamentSection({ canManage }: { canManage: boolean }) {
   const [selectedTournamentId, setSelectedTournamentId] = useState<Id<'tournaments'> | null>(null);
   const [tournamentName, setTournamentName] = useState('');
   const [tournamentDescription, setTournamentDescription] = useState('');
@@ -235,82 +357,74 @@ function SignedInPanel() {
   };
 
   return (
-    <View style={styles.section}>
-      <View style={styles.headerRow}>
-        <View>
-          <ThemedText type="title">Volleyball tournaments</ThemedText>
-          <ThemedText style={styles.subtitle}>Group matches under each event.</ThemedText>
-        </View>
-        <Pressable style={styles.secondaryButton} onPress={() => void signOut()}>
-          <ThemedText>Sign out</ThemedText>
-        </Pressable>
-      </View>
-
-      <View style={styles.formCard}>
-        <ThemedText style={styles.sectionTitle}>Create a tournament</ThemedText>
-        <ThemedText style={styles.sectionLabel}>Tournament name</ThemedText>
-        <TextInput
-          style={styles.input}
-          placeholder="Summer Spike Classic"
-          value={tournamentName}
-          onChangeText={setTournamentName}
-        />
-        <ThemedText style={styles.sectionLabel}>Description (optional)</ThemedText>
-        <TextInput
-          style={styles.input}
-          placeholder="Open division tournament."
-          value={tournamentDescription}
-          onChangeText={setTournamentDescription}
-        />
-        <ThemedText style={styles.sectionLabel}>Status</ThemedText>
-        <View style={styles.row}>
-          {(['draft', 'active', 'completed'] as const).map((option) => (
-            <Pressable
-              key={option}
-              style={[
-                styles.formatButton,
-                tournamentStatus === option ? styles.formatButtonActive : null,
-              ]}
-              onPress={() => setTournamentStatus(option)}>
-              <ThemedText
-                style={
-                  tournamentStatus === option ? styles.formatButtonTextActive : styles.formatButtonText
-                }>
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.row}>
-          <View style={styles.flexItem}>
-            <ThemedText style={styles.sectionLabel}>Start date (YYYY-MM-DD)</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="2026-05-01"
-              value={tournamentStartDate}
-              onChangeText={setTournamentStartDate}
-            />
+    <>
+      {canManage ? (
+        <View style={styles.formCard}>
+          <ThemedText style={styles.sectionTitle}>Create a tournament</ThemedText>
+          <ThemedText style={styles.sectionLabel}>Tournament name</ThemedText>
+          <TextInput
+            style={styles.input}
+            placeholder="Summer Spike Classic"
+            value={tournamentName}
+            onChangeText={setTournamentName}
+          />
+          <ThemedText style={styles.sectionLabel}>Description (optional)</ThemedText>
+          <TextInput
+            style={styles.input}
+            placeholder="Open division tournament."
+            value={tournamentDescription}
+            onChangeText={setTournamentDescription}
+          />
+          <ThemedText style={styles.sectionLabel}>Status</ThemedText>
+          <View style={styles.row}>
+            {(['draft', 'active', 'completed'] as const).map((option) => (
+              <Pressable
+                key={option}
+                style={[
+                  styles.formatButton,
+                  tournamentStatus === option ? styles.formatButtonActive : null,
+                ]}
+                onPress={() => setTournamentStatus(option)}>
+                <ThemedText
+                  style={
+                    tournamentStatus === option ? styles.formatButtonTextActive : styles.formatButtonText
+                  }>
+                  {option.charAt(0).toUpperCase() + option.slice(1)}
+                </ThemedText>
+              </Pressable>
+            ))}
           </View>
-          <View style={styles.flexItem}>
-            <ThemedText style={styles.sectionLabel}>End date (YYYY-MM-DD)</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="2026-05-03"
-              value={tournamentEndDate}
-              onChangeText={setTournamentEndDate}
-            />
+          <View style={styles.row}>
+            <View style={styles.flexItem}>
+              <ThemedText style={styles.sectionLabel}>Start date (YYYY-MM-DD)</ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="2026-05-01"
+                value={tournamentStartDate}
+                onChangeText={setTournamentStartDate}
+              />
+            </View>
+            <View style={styles.flexItem}>
+              <ThemedText style={styles.sectionLabel}>End date (YYYY-MM-DD)</ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="2026-05-03"
+                value={tournamentEndDate}
+                onChangeText={setTournamentEndDate}
+              />
+            </View>
           </View>
+          {tournamentError ? <ThemedText style={styles.errorText}>{tournamentError}</ThemedText> : null}
+          <Pressable
+            style={[styles.primaryButton, isCreatingTournament ? styles.primaryButtonDisabled : null]}
+            onPress={() => void handleCreateTournament()}
+            disabled={isCreatingTournament}>
+            <ThemedText style={styles.primaryButtonText}>
+              {isCreatingTournament ? 'Creating tournament...' : 'Create tournament'}
+            </ThemedText>
+          </Pressable>
         </View>
-        {tournamentError ? <ThemedText style={styles.errorText}>{tournamentError}</ThemedText> : null}
-        <Pressable
-          style={[styles.primaryButton, isCreatingTournament ? styles.primaryButtonDisabled : null]}
-          onPress={() => void handleCreateTournament()}
-          disabled={isCreatingTournament}>
-          <ThemedText style={styles.primaryButtonText}>
-            {isCreatingTournament ? 'Creating tournament...' : 'Create tournament'}
-          </ThemedText>
-        </Pressable>
-      </View>
+      ) : null}
 
       <View style={styles.section}>
         <ThemedText style={styles.sectionTitle}>Select a tournament</ThemedText>
@@ -345,7 +459,7 @@ function SignedInPanel() {
             </Pressable>
           ))}
         </View>
-        {selectedTournament ? (
+        {selectedTournament && canManage ? (
           <View style={styles.statusCard}>
             <ThemedText style={styles.helperText}>
               Current status: {selectedTournament.status}
@@ -374,93 +488,95 @@ function SignedInPanel() {
         ) : null}
       </View>
 
-      <View style={styles.formCard}>
-        <ThemedText style={styles.sectionTitle}>Create a match</ThemedText>
-        <ThemedText style={styles.sectionLabel}>Match name (optional)</ThemedText>
-        <TextInput
-          style={styles.input}
-          placeholder="Friday Night Volleyball"
-          value={name}
-          onChangeText={setName}
-        />
+      {canManage ? (
+        <View style={styles.formCard}>
+          <ThemedText style={styles.sectionTitle}>Create a match</ThemedText>
+          <ThemedText style={styles.sectionLabel}>Match name (optional)</ThemedText>
+          <TextInput
+            style={styles.input}
+            placeholder="Friday Night Volleyball"
+            value={name}
+            onChangeText={setName}
+          />
 
-        <ThemedText style={styles.sectionLabel}>Format</ThemedText>
-        <View style={styles.row}>
-          {(['singles', 'doubles', 'teams'] as const).map((option) => (
-            <Pressable
-              key={option}
-              style={[
-                styles.formatButton,
-                format === option ? styles.formatButtonActive : null,
-              ]}
-              onPress={() => setFormat(option)}>
-              <ThemedText style={format === option ? styles.formatButtonTextActive : styles.formatButtonText}>
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </View>
-        {format !== 'teams' ? (
-          <ThemedText style={styles.helperText}>
-            Enter exactly {requiredPlayers} player(s) per side.
-          </ThemedText>
-        ) : null}
+          <ThemedText style={styles.sectionLabel}>Format</ThemedText>
+          <View style={styles.row}>
+            {(['singles', 'doubles', 'teams'] as const).map((option) => (
+              <Pressable
+                key={option}
+                style={[
+                  styles.formatButton,
+                  format === option ? styles.formatButtonActive : null,
+                ]}
+                onPress={() => setFormat(option)}>
+                <ThemedText style={format === option ? styles.formatButtonTextActive : styles.formatButtonText}>
+                  {option.charAt(0).toUpperCase() + option.slice(1)}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+          {format !== 'teams' ? (
+            <ThemedText style={styles.helperText}>
+              Enter exactly {requiredPlayers} player(s) per side.
+            </ThemedText>
+          ) : null}
 
-        {format === 'teams' ? (
+          {format === 'teams' ? (
+            <View style={styles.row}>
+              <View style={styles.flexItem}>
+                <ThemedText style={styles.sectionLabel}>Home team</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Home team"
+                  value={homeTeamName}
+                  onChangeText={setHomeTeamName}
+                />
+              </View>
+              <View style={styles.flexItem}>
+                <ThemedText style={styles.sectionLabel}>Away team</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Away team"
+                  value={awayTeamName}
+                  onChangeText={setAwayTeamName}
+                />
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.row}>
             <View style={styles.flexItem}>
-              <ThemedText style={styles.sectionLabel}>Home team</ThemedText>
+              <ThemedText style={styles.sectionLabel}>Home players</ThemedText>
               <TextInput
                 style={styles.input}
-                placeholder="Home team"
-                value={homeTeamName}
-                onChangeText={setHomeTeamName}
+                placeholder="Comma-separated names"
+                value={homePlayers}
+                onChangeText={setHomePlayers}
               />
             </View>
             <View style={styles.flexItem}>
-              <ThemedText style={styles.sectionLabel}>Away team</ThemedText>
+              <ThemedText style={styles.sectionLabel}>Away players</ThemedText>
               <TextInput
                 style={styles.input}
-                placeholder="Away team"
-                value={awayTeamName}
-                onChangeText={setAwayTeamName}
+                placeholder="Comma-separated names"
+                value={awayPlayers}
+                onChangeText={setAwayPlayers}
               />
             </View>
           </View>
-        ) : null}
 
-        <View style={styles.row}>
-          <View style={styles.flexItem}>
-            <ThemedText style={styles.sectionLabel}>Home players</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Comma-separated names"
-              value={homePlayers}
-              onChangeText={setHomePlayers}
-            />
-          </View>
-          <View style={styles.flexItem}>
-            <ThemedText style={styles.sectionLabel}>Away players</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Comma-separated names"
-              value={awayPlayers}
-              onChangeText={setAwayPlayers}
-            />
-          </View>
+          {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
+
+          <Pressable
+            style={[styles.primaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}
+            onPress={() => void handleCreateMatch()}
+            disabled={isSubmitting}>
+            <ThemedText style={styles.primaryButtonText}>
+              {isSubmitting ? 'Creating match...' : 'Create match'}
+            </ThemedText>
+          </Pressable>
         </View>
-
-        {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
-
-        <Pressable
-          style={[styles.primaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}
-          onPress={() => void handleCreateMatch()}
-          disabled={isSubmitting}>
-          <ThemedText style={styles.primaryButtonText}>
-            {isSubmitting ? 'Creating match...' : 'Create match'}
-          </ThemedText>
-        </Pressable>
-      </View>
+      ) : null}
 
       <View style={styles.matchesSection}>
         <ThemedText type="title">Recent matches</ThemedText>
@@ -492,10 +608,12 @@ function SignedInPanel() {
             );
           })
         ) : (
-          <ThemedText style={styles.helperText}>No matches yet.</ThemedText>
+          <ThemedText style={styles.helperText}>
+            No matches yet.{canManage ? ' Create the first one above.' : ''}
+          </ThemedText>
         )}
       </View>
-    </View>
+    </>
   );
 }
 
@@ -521,7 +639,7 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   formCard: {
@@ -601,6 +719,7 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     borderRadius: 10,
     paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
   },
   linkButton: {

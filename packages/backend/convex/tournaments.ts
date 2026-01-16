@@ -1,5 +1,11 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import {
+  getUserOrganization,
+  requireOrgMembership,
+  requireOrgRole,
+} from "./lib/orgAuth";
 
 const statusValidator = v.union(
   v.literal("draft"),
@@ -10,6 +16,7 @@ const statusValidator = v.union(
 const tournamentValidator = v.object({
   _id: v.id("tournaments"),
   _creationTime: v.number(),
+  organizationId: v.id("organizations"),
   sport: v.literal("volleyball"),
   name: v.string(),
   description: v.optional(v.string()),
@@ -19,6 +26,9 @@ const tournamentValidator = v.object({
   createdBy: v.optional(v.id("users")),
 });
 
+/**
+ * Create a tournament (owner/admin only)
+ */
 export const createTournament = mutation({
   args: {
     name: v.string(),
@@ -29,6 +39,20 @@ export const createTournament = mutation({
   },
   returns: v.id("tournaments"),
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get user's organization
+    const userOrg = await getUserOrganization(ctx);
+    if (!userOrg) {
+      throw new Error("You must belong to an organization to create tournaments");
+    }
+
+    // Only owner and admin can create tournaments
+    await requireOrgRole(ctx, userOrg.organization._id, ["owner", "admin"]);
+
     if (
       args.startDate !== undefined &&
       args.endDate !== undefined &&
@@ -38,34 +62,78 @@ export const createTournament = mutation({
     }
 
     return await ctx.db.insert("tournaments", {
+      organizationId: userOrg.organization._id,
       sport: "volleyball",
       name: args.name,
       description: args.description,
       status: args.status ?? "draft",
       startDate: args.startDate,
       endDate: args.endDate,
+      createdBy: userId,
     });
   },
 });
 
+/**
+ * List tournaments for the user's organization
+ */
 export const listTournaments = query({
   args: {},
   returns: v.array(tournamentValidator),
   handler: async (ctx) => {
-    return await ctx.db.query("tournaments").order("desc").take(50);
+    const userOrg = await getUserOrganization(ctx);
+    if (!userOrg) {
+      return [];
+    }
+
+    return await ctx.db
+      .query("tournaments")
+      .withIndex("by_organization", (q) =>
+        q.eq("organizationId", userOrg.organization._id)
+      )
+      .order("desc")
+      .take(50);
   },
 });
 
+/**
+ * Get a tournament by ID (with membership check)
+ */
 export const getTournament = query({
   args: {
     tournamentId: v.id("tournaments"),
   },
   returns: v.union(tournamentValidator, v.null()),
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.tournamentId);
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      return null;
+    }
+
+    // Verify user is a member of the tournament's organization
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return null;
+    }
+
+    const membership = await ctx.db
+      .query("organizationMembers")
+      .withIndex("by_organization_and_user", (q) =>
+        q.eq("organizationId", tournament.organizationId).eq("userId", userId)
+      )
+      .unique();
+
+    if (!membership) {
+      return null;
+    }
+
+    return tournament;
   },
 });
 
+/**
+ * Update a tournament (owner/admin only)
+ */
 export const updateTournament = mutation({
   args: {
     tournamentId: v.id("tournaments"),
@@ -77,6 +145,14 @@ export const updateTournament = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found");
+    }
+
+    // Only owner and admin can update tournaments
+    await requireOrgRole(ctx, tournament.organizationId, ["owner", "admin"]);
+
     const updates: Partial<{
       name: string;
       description?: string;

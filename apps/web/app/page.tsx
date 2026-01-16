@@ -33,7 +33,7 @@ export default function Home() {
             />
           </div>
           <h1 className="font-semibold text-slate-800 dark:text-slate-200">
-            Convex + Next.js + Convex Auth
+            Tournament Management
           </h1>
         </div>
         <SignOutButton />
@@ -83,6 +83,267 @@ function SignOutButton() {
 }
 
 function Content() {
+  const myOrg = useQuery(api.organizations.getMyOrganization);
+
+  if (myOrg === undefined) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+      </div>
+    );
+  }
+
+  if (myOrg === null) {
+    return <CreateOrganizationForm />;
+  }
+
+  return <OrganizationDashboard org={myOrg} />;
+}
+
+function CreateOrganizationForm() {
+  const createOrganization = useMutation(api.organizations.createOrganization);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Organization name is required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await createOrganization({
+        name: trimmedName,
+        description: description.trim() || undefined,
+      });
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Unable to create organization."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6 max-w-xl mx-auto">
+      <div className="text-center">
+        <h2 className="font-bold text-2xl text-slate-800 dark:text-slate-200">
+          Welcome to Tournament Management
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400 mt-2">
+          Create your organization to start managing tournaments and matches.
+        </p>
+      </div>
+
+      <form
+        className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm"
+        onSubmit={handleSubmit}
+      >
+        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+          Create your organization
+        </h3>
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Organization name
+          </label>
+          <input
+            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+            placeholder="AVP League"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Description (optional)
+          </label>
+          <input
+            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+            placeholder="Professional volleyball tournament organization"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </div>
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-500 text-white text-sm font-medium px-6 py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.01] disabled:scale-100"
+        >
+          {isSubmitting ? "Creating organization..." : "Create organization"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+type OrgData = {
+  organization: {
+    _id: Id<"organizations">;
+    _creationTime: number;
+    name: string;
+    description?: string;
+    createdBy: Id<"users">;
+  };
+  membership: {
+    _id: Id<"organizationMembers">;
+    _creationTime: number;
+    organizationId: Id<"organizations">;
+    userId: Id<"users">;
+    role: "owner" | "admin" | "scorer";
+  };
+};
+
+function OrganizationDashboard({ org }: { org: OrgData }) {
+  const [showMembers, setShowMembers] = useState(false);
+  const canManage = org.membership.role === "owner" || org.membership.role === "admin";
+
+  return (
+    <div className="flex flex-col gap-6 max-w-3xl mx-auto">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="font-bold text-2xl text-slate-800 dark:text-slate-200">
+            {org.organization.name}
+          </h2>
+          {org.organization.description && (
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              {org.organization.description}
+            </p>
+          )}
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            Your role: <span className="font-semibold">{org.membership.role}</span>
+          </p>
+        </div>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => setShowMembers(!showMembers)}
+            className="px-3 py-2 text-sm font-medium border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          >
+            {showMembers ? "Hide members" : "Manage members"}
+          </button>
+        )}
+      </div>
+
+      {showMembers && canManage && (
+        <MemberManagement organizationId={org.organization._id} currentRole={org.membership.role} />
+      )}
+
+      <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
+
+      <TournamentSection canManage={canManage} />
+    </div>
+  );
+}
+
+function MemberManagement({
+  organizationId,
+  currentRole,
+}: {
+  organizationId: Id<"organizations">;
+  currentRole: "owner" | "admin" | "scorer";
+}) {
+  const members = useQuery(api.organizations.listMembers, { organizationId });
+  const updateMemberRole = useMutation(api.organizations.updateMemberRole);
+  const removeMember = useMutation(api.organizations.removeMember);
+  const [error, setError] = useState<string | null>(null);
+
+  const isOwner = currentRole === "owner";
+
+  const handleRoleChange = async (
+    memberId: Id<"organizationMembers">,
+    role: "owner" | "admin" | "scorer"
+  ) => {
+    setError(null);
+    try {
+      await updateMemberRole({ memberId, role });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update role");
+    }
+  };
+
+  const handleRemove = async (memberId: Id<"organizationMembers">) => {
+    setError(null);
+    try {
+      await removeMember({ memberId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove member");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+        Organization Members
+      </h3>
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+      {members === undefined ? (
+        <p className="text-sm text-slate-600 dark:text-slate-400">Loading members...</p>
+      ) : members.length === 0 ? (
+        <p className="text-sm text-slate-600 dark:text-slate-400">No members found.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {members.map((member) => (
+            <div
+              key={member._id}
+              className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+            >
+              <div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {member.email ?? "Unknown user"}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {member.role}
+                </p>
+              </div>
+              {isOwner && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={member.role}
+                    onChange={(e) =>
+                      void handleRoleChange(
+                        member._id,
+                        e.target.value as "owner" | "admin" | "scorer"
+                      )
+                    }
+                    className="text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                  >
+                    <option value="owner">Owner</option>
+                    <option value="admin">Admin</option>
+                    <option value="scorer">Scorer</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void handleRemove(member._id)}
+                    className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TournamentSection({ canManage }: { canManage: boolean }) {
   const tournaments = useQuery(api.tournaments.listTournaments);
   const matches = useQuery(api.matches.listMatches);
   const createTournament = useMutation(api.tournaments.createTournament);
@@ -103,7 +364,7 @@ function Content() {
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
 
   const [format, setFormat] = useState<"singles" | "doubles" | "teams">(
-    "singles",
+    "singles"
   );
   const [name, setName] = useState("");
   const [homeTeamName, setHomeTeamName] = useState("");
@@ -115,15 +376,13 @@ function Content() {
 
   const matchesByTournament = useQuery(
     api.matches.listMatchesByTournament,
-    selectedTournamentId ? { tournamentId: selectedTournamentId } : "skip",
+    selectedTournamentId ? { tournamentId: selectedTournamentId } : "skip"
   );
 
-  const visibleMatches = selectedTournamentId
-    ? matchesByTournament
-    : matches;
+  const visibleMatches = selectedTournamentId ? matchesByTournament : matches;
 
   const selectedTournament = tournaments?.find(
-    (tournament) => tournament._id === selectedTournamentId,
+    (tournament) => tournament._id === selectedTournamentId
   );
 
   const tournamentNameById = useMemo(() => {
@@ -148,16 +407,12 @@ function Content() {
     const homeParticipant = {
       side: "home" as const,
       players: homePlayersList,
-      ...(format === "teams"
-        ? { teamName: homeTeamName.trim() }
-        : {}),
+      ...(format === "teams" ? { teamName: homeTeamName.trim() } : {}),
     };
     const awayParticipant = {
       side: "away" as const,
       players: awayPlayersList,
-      ...(format === "teams"
-        ? { teamName: awayTeamName.trim() }
-        : {}),
+      ...(format === "teams" ? { teamName: awayTeamName.trim() } : {}),
     };
 
     return { homeParticipant, awayParticipant };
@@ -167,7 +422,7 @@ function Content() {
     value ? new Date(value).getTime() : undefined;
 
   const handleCreateTournament = async (
-    event: React.FormEvent<HTMLFormElement>,
+    event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
     setTournamentError(null);
@@ -180,7 +435,11 @@ function Content() {
 
     const startDate = parseDate(tournamentStartDate);
     const endDate = parseDate(tournamentEndDate);
-    if (startDate !== undefined && endDate !== undefined && startDate > endDate) {
+    if (
+      startDate !== undefined &&
+      endDate !== undefined &&
+      startDate > endDate
+    ) {
       setTournamentError("Start date must be before end date.");
       return;
     }
@@ -204,14 +463,16 @@ function Content() {
       setTournamentError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to create tournament.",
+          : "Unable to create tournament."
       );
     } finally {
       setIsCreatingTournament(false);
     }
   };
 
-  const handleStatusUpdate = async (status: "draft" | "active" | "completed") => {
+  const handleStatusUpdate = async (
+    status: "draft" | "active" | "completed"
+  ) => {
     if (!selectedTournamentId) {
       return;
     }
@@ -221,7 +482,7 @@ function Content() {
       setTournamentError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to update tournament.",
+          : "Unable to update tournament."
       );
     }
   };
@@ -243,7 +504,7 @@ function Content() {
         awayParticipant.players.length !== requiredPlayers
       ) {
         setError(
-          `${format} format requires ${requiredPlayers} player(s) per side.`,
+          `${format} format requires ${requiredPlayers} player(s) per side.`
         );
         return;
       }
@@ -269,7 +530,7 @@ function Content() {
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to create match.",
+          : "Unable to create match."
       );
     } finally {
       setIsSubmitting(false);
@@ -277,104 +538,103 @@ function Content() {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl mx-auto">
-      <div>
-        <h2 className="font-bold text-2xl text-slate-800 dark:text-slate-200">
-          Volleyball Tournament Hub
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400 mt-2">
-          Create tournaments and organize matches under each event.
-        </p>
-      </div>
-
-      <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
-
-      <form
-        className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm"
-        onSubmit={handleCreateTournament}
-      >
-        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-          Create a tournament
-        </h3>
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            Tournament name
-          </label>
-          <input
-            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-            placeholder="Summer Spike Classic"
-            value={tournamentName}
-            onChange={(event) => setTournamentName(event.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            Description (optional)
-          </label>
-          <input
-            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-            placeholder="Open division volleyball tournament."
-            value={tournamentDescription}
-            onChange={(event) => setTournamentDescription(event.target.value)}
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Status
-            </label>
-            <select
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-              value={tournamentStatus}
-              onChange={(event) =>
-                setTournamentStatus(
-                  event.target.value as "draft" | "active" | "completed",
-                )
-              }
+    <>
+      {canManage && (
+        <>
+          <form
+            className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm"
+            onSubmit={handleCreateTournament}
+          >
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+              Create a tournament
+            </h3>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Tournament name
+              </label>
+              <input
+                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                placeholder="Summer Spike Classic"
+                value={tournamentName}
+                onChange={(event) => setTournamentName(event.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Description (optional)
+              </label>
+              <input
+                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                placeholder="Open division volleyball tournament."
+                value={tournamentDescription}
+                onChange={(event) =>
+                  setTournamentDescription(event.target.value)
+                }
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Status
+                </label>
+                <select
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                  value={tournamentStatus}
+                  onChange={(event) =>
+                    setTournamentStatus(
+                      event.target.value as "draft" | "active" | "completed"
+                    )
+                  }
+                >
+                  <option value="draft">Draft</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Start date (optional)
+                </label>
+                <input
+                  type="date"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                  value={tournamentStartDate}
+                  onChange={(event) =>
+                    setTournamentStartDate(event.target.value)
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  End date (optional)
+                </label>
+                <input
+                  type="date"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                  value={tournamentEndDate}
+                  onChange={(event) => setTournamentEndDate(event.target.value)}
+                />
+              </div>
+            </div>
+            {tournamentError && (
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {tournamentError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={isCreatingTournament}
+              className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-500 text-white text-sm font-medium px-6 py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.01] disabled:scale-100"
             >
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Start date (optional)
-            </label>
-            <input
-              type="date"
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-              value={tournamentStartDate}
-              onChange={(event) => setTournamentStartDate(event.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              End date (optional)
-            </label>
-            <input
-              type="date"
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-              value={tournamentEndDate}
-              onChange={(event) => setTournamentEndDate(event.target.value)}
-            />
-          </div>
-        </div>
-        {tournamentError && (
-          <p className="text-sm text-red-600 dark:text-red-400">
-            {tournamentError}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={isCreatingTournament}
-          className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-500 text-white text-sm font-medium px-6 py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.01] disabled:scale-100"
-        >
-          {isCreatingTournament ? "Creating tournament..." : "Create tournament"}
-        </button>
-      </form>
+              {isCreatingTournament
+                ? "Creating tournament..."
+                : "Create tournament"}
+            </button>
+          </form>
 
-      <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
+          <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
+        </>
+      )}
 
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -412,7 +672,7 @@ function Content() {
             </button>
           ))}
         </div>
-        {selectedTournament && (
+        {selectedTournament && canManage && (
           <div className="flex flex-col gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
             <p className="text-sm text-slate-600 dark:text-slate-400">
               Current status:{" "}
@@ -442,118 +702,122 @@ function Content() {
 
       <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
 
-      <form
-        className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm"
-        onSubmit={handleSubmit}
-      >
-        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-          Create a match
-        </h3>
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            Match name (optional)
-          </label>
-          <input
-            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-            placeholder="Friday Night Volleyball"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            Format
-          </label>
-          <div className="flex gap-3">
-            {(["singles", "doubles", "teams"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                  format === option
-                    ? "bg-slate-800 text-white border-slate-800"
-                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600"
-                }`}
-                onClick={() => setFormat(option)}
-              >
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </button>
-            ))}
-          </div>
-          {format !== "teams" && (
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Enter exactly {requiredPlayers} player(s) per side.
-            </p>
-          )}
-        </div>
-
-        {format === "teams" && (
-          <div className="grid gap-4 md:grid-cols-2">
+      {canManage && (
+        <>
+          <form
+            className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm"
+            onSubmit={handleSubmit}
+          >
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+              Create a match
+            </h3>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Home team name
+                Match name (optional)
               </label>
               <input
                 className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-                placeholder="Home team"
-                value={homeTeamName}
-                onChange={(event) => setHomeTeamName(event.target.value)}
+                placeholder="Friday Night Volleyball"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
               />
             </div>
+
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Away team name
+                Format
               </label>
-              <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-                placeholder="Away team"
-                value={awayTeamName}
-                onChange={(event) => setAwayTeamName(event.target.value)}
-              />
+              <div className="flex gap-3">
+                {(["singles", "doubles", "teams"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      format === option
+                        ? "bg-slate-800 text-white border-slate-800"
+                        : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600"
+                    }`}
+                    onClick={() => setFormat(option)}
+                  >
+                    {option.charAt(0).toUpperCase() + option.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {format !== "teams" && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Enter exactly {requiredPlayers} player(s) per side.
+                </p>
+              )}
             </div>
-          </div>
-        )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Home players
-            </label>
-            <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-              placeholder="Comma-separated names"
-              value={homePlayers}
-              onChange={(event) => setHomePlayers(event.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Away players
-            </label>
-            <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
-              placeholder="Comma-separated names"
-              value={awayPlayers}
-              onChange={(event) => setAwayPlayers(event.target.value)}
-            />
-          </div>
-        </div>
+            {format === "teams" && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Home team name
+                  </label>
+                  <input
+                    className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                    placeholder="Home team"
+                    value={homeTeamName}
+                    onChange={(event) => setHomeTeamName(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Away team name
+                  </label>
+                  <input
+                    className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                    placeholder="Away team"
+                    value={awayTeamName}
+                    onChange={(event) => setAwayTeamName(event.target.value)}
+                  />
+                </div>
+              </div>
+            )}
 
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Home players
+                </label>
+                <input
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                  placeholder="Comma-separated names"
+                  value={homePlayers}
+                  onChange={(event) => setHomePlayers(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Away players
+                </label>
+                <input
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+                  placeholder="Comma-separated names"
+                  value={awayPlayers}
+                  onChange={(event) => setAwayPlayers(event.target.value)}
+                />
+              </div>
+            </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-500 text-white text-sm font-medium px-6 py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.01] disabled:scale-100"
-        >
-          {isSubmitting ? "Creating match..." : "Create match"}
-        </button>
-      </form>
+            {error && (
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            )}
 
-      <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-500 text-white text-sm font-medium px-6 py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.01] disabled:scale-100"
+            >
+              {isSubmitting ? "Creating match..." : "Create match"}
+            </button>
+          </form>
+
+          <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
+        </>
+      )}
 
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -572,10 +836,10 @@ function Content() {
           <div className="grid gap-4">
             {visibleMatches.map((match) => {
               const home = match.participants.find(
-                (participant) => participant.side === "home",
+                (participant) => participant.side === "home"
               );
               const away = match.participants.find(
-                (participant) => participant.side === "away",
+                (participant) => participant.side === "away"
               );
 
               const formatLabel =
@@ -614,10 +878,10 @@ function Content() {
           </div>
         ) : (
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            No matches yet. Create the first one above.
+            No matches yet.{canManage ? " Create the first one above." : ""}
           </p>
         )}
       </div>
-    </div>
+    </>
   );
 }
