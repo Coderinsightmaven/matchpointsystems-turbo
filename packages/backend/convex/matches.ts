@@ -23,6 +23,7 @@ export const createMatch = mutation({
     format: formatValidator,
     name: v.optional(v.string()),
     participants: v.array(participantValidator),
+    tournamentId: v.optional(v.id("tournaments")),
   },
   returns: v.id("matches"),
   handler: async (ctx, args) => {
@@ -52,31 +53,56 @@ export const createMatch = mutation({
       }
     }
 
+    if (args.tournamentId) {
+      const tournament = await ctx.db.get(args.tournamentId);
+      if (!tournament) {
+        throw new Error("Tournament not found.");
+      }
+    }
+
     return await ctx.db.insert("matches", {
       sport: "volleyball",
       format: args.format,
       status: "scheduled",
       name: args.name,
       participants: args.participants,
+      tournamentId: args.tournamentId,
     });
   },
 });
 
+const matchValidator = v.object({
+  _id: v.id("matches"),
+  _creationTime: v.number(),
+  sport: v.literal("volleyball"),
+  format: formatValidator,
+  status: statusValidator,
+  name: v.optional(v.string()),
+  participants: v.array(participantValidator),
+  tournamentId: v.optional(v.id("tournaments")),
+  createdBy: v.optional(v.id("users")),
+});
+
 export const listMatches = query({
   args: {},
-  returns: v.array(
-    v.object({
-      _id: v.id("matches"),
-      _creationTime: v.number(),
-      sport: v.literal("volleyball"),
-      format: formatValidator,
-      status: statusValidator,
-      name: v.optional(v.string()),
-      participants: v.array(participantValidator),
-      createdBy: v.optional(v.id("users")),
-    }),
-  ),
+  returns: v.array(matchValidator),
   handler: async (ctx) => {
     return await ctx.db.query("matches").order("desc").take(50);
+  },
+});
+
+export const listMatchesByTournament = query({
+  args: {
+    tournamentId: v.id("tournaments"),
+  },
+  returns: v.array(matchValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("matches")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .order("desc")
+      .take(50);
   },
 });

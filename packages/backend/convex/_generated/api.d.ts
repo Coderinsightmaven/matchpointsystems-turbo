@@ -17,6 +17,7 @@ import type * as myFunctions from "../myFunctions.js";
 import type * as permissions from "../permissions.js";
 import type * as roles from "../roles.js";
 import type * as seed from "../seed.js";
+import type * as tournaments from "../tournaments.js";
 import type * as users from "../users.js";
 
 import type {
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   permissions: typeof permissions;
   roles: typeof roles;
   seed: typeof seed;
+  tournaments: typeof tournaments;
   users: typeof users;
 }>;
 

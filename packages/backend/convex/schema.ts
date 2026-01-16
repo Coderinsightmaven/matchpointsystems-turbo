@@ -44,6 +44,22 @@ export default defineSchema({
     .index("by_role", ["roleId"])
     .index("by_active", ["isActive"]),
 
+  tournaments: defineTable({
+    sport: v.literal("volleyball"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("active"),
+      v.literal("completed"),
+    ),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    createdBy: v.optional(v.id("users")),
+  })
+    .index("by_sport", ["sport"])
+    .index("by_status", ["status"]),
+
   matches: defineTable({
     sport: v.literal("volleyball"),
     format: v.union(
@@ -60,9 +76,11 @@ export default defineSchema({
         players: v.array(v.string()),
       }),
     ),
+    tournamentId: v.optional(v.id("tournaments")),
     createdBy: v.optional(v.id("users")),
   })
     .index("by_sport", ["sport"])
     .index("by_status", ["status"])
-    .index("by_sport_and_status", ["sport", "status"]),
+    .index("by_sport_and_status", ["sport", "status"])
+    .index("by_tournament", ["tournamentId"]),
 });

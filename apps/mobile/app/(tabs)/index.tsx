@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '@workspace/backend/convex/_generated/api';
+import type { Id } from '@workspace/backend/convex/_generated/dataModel';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -81,8 +82,14 @@ function SignInForm() {
 
 function SignedInPanel() {
   const { signOut } = useAuthActions();
-  const matches = useQuery(api.matches.listMatches);
-  const createMatch = useMutation(api.matches.createMatch);
+  const [selectedTournamentId, setSelectedTournamentId] = useState<Id<'tournaments'> | null>(null);
+  const [tournamentName, setTournamentName] = useState('');
+  const [tournamentDescription, setTournamentDescription] = useState('');
+  const [tournamentStatus, setTournamentStatus] = useState<'draft' | 'active' | 'completed'>('draft');
+  const [tournamentStartDate, setTournamentStartDate] = useState('');
+  const [tournamentEndDate, setTournamentEndDate] = useState('');
+  const [tournamentError, setTournamentError] = useState<string | null>(null);
+  const [isCreatingTournament, setIsCreatingTournament] = useState(false);
 
   const [format, setFormat] = useState<'singles' | 'doubles' | 'teams'>('singles');
   const [name, setName] = useState('');
@@ -92,6 +99,21 @@ function SignedInPanel() {
   const [awayPlayers, setAwayPlayers] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const tournaments = useQuery(api.tournaments.listTournaments);
+  const createTournament = useMutation(api.tournaments.createTournament);
+  const updateTournament = useMutation(api.tournaments.updateTournament);
+  const matches = useQuery(api.matches.listMatches);
+  const matchesByTournament = useQuery(
+    api.matches.listMatchesByTournament,
+    selectedTournamentId ? { tournamentId: selectedTournamentId } : 'skip',
+  );
+  const createMatch = useMutation(api.matches.createMatch);
+
+  const visibleMatches = selectedTournamentId ? matchesByTournament : matches;
+  const selectedTournament = tournaments?.find(
+    (tournament) => tournament._id === selectedTournamentId,
+  );
 
   const requiredPlayers = format === 'singles' ? 1 : format === 'doubles' ? 2 : 0;
 
@@ -119,6 +141,58 @@ function SignedInPanel() {
     return { homeParticipant, awayParticipant };
   };
 
+  const parseDate = (value: string) => (value ? new Date(value).getTime() : undefined);
+
+  const handleCreateTournament = async () => {
+    setTournamentError(null);
+
+    const trimmedName = tournamentName.trim();
+    if (!trimmedName) {
+      setTournamentError('Tournament name is required.');
+      return;
+    }
+
+    const startDate = parseDate(tournamentStartDate);
+    const endDate = parseDate(tournamentEndDate);
+    if (startDate !== undefined && endDate !== undefined && startDate > endDate) {
+      setTournamentError('Start date must be before end date.');
+      return;
+    }
+
+    setIsCreatingTournament(true);
+    try {
+      const id = await createTournament({
+        name: trimmedName,
+        description: tournamentDescription.trim() || undefined,
+        status: tournamentStatus,
+        startDate,
+        endDate,
+      });
+      setTournamentName('');
+      setTournamentDescription('');
+      setTournamentStatus('draft');
+      setTournamentStartDate('');
+      setTournamentEndDate('');
+      setSelectedTournamentId(id);
+    } catch (caught) {
+      setTournamentError(caught instanceof Error ? caught.message : 'Unable to create tournament.');
+    } finally {
+      setIsCreatingTournament(false);
+    }
+  };
+
+  const handleStatusUpdate = async (status: 'draft' | 'active' | 'completed') => {
+    if (!selectedTournamentId) {
+      return;
+    }
+
+    try {
+      await updateTournament({ tournamentId: selectedTournamentId, status });
+    } catch (caught) {
+      setTournamentError(caught instanceof Error ? caught.message : 'Unable to update tournament.');
+    }
+  };
+
   const handleCreateMatch = async () => {
     setError(null);
 
@@ -142,6 +216,7 @@ function SignedInPanel() {
       format,
       participants: [homeParticipant, awayParticipant],
       ...(trimmedName ? { name: trimmedName } : {}),
+      ...(selectedTournamentId ? { tournamentId: selectedTournamentId } : {}),
     };
 
     setIsSubmitting(true);
@@ -163,8 +238,8 @@ function SignedInPanel() {
     <View style={styles.section}>
       <View style={styles.headerRow}>
         <View>
-          <ThemedText type="title">Volleyball matches</ThemedText>
-          <ThemedText style={styles.subtitle}>Create singles, doubles, or team play.</ThemedText>
+          <ThemedText type="title">Volleyball tournaments</ThemedText>
+          <ThemedText style={styles.subtitle}>Group matches under each event.</ThemedText>
         </View>
         <Pressable style={styles.secondaryButton} onPress={() => void signOut()}>
           <ThemedText>Sign out</ThemedText>
@@ -172,6 +247,135 @@ function SignedInPanel() {
       </View>
 
       <View style={styles.formCard}>
+        <ThemedText style={styles.sectionTitle}>Create a tournament</ThemedText>
+        <ThemedText style={styles.sectionLabel}>Tournament name</ThemedText>
+        <TextInput
+          style={styles.input}
+          placeholder="Summer Spike Classic"
+          value={tournamentName}
+          onChangeText={setTournamentName}
+        />
+        <ThemedText style={styles.sectionLabel}>Description (optional)</ThemedText>
+        <TextInput
+          style={styles.input}
+          placeholder="Open division tournament."
+          value={tournamentDescription}
+          onChangeText={setTournamentDescription}
+        />
+        <ThemedText style={styles.sectionLabel}>Status</ThemedText>
+        <View style={styles.row}>
+          {(['draft', 'active', 'completed'] as const).map((option) => (
+            <Pressable
+              key={option}
+              style={[
+                styles.formatButton,
+                tournamentStatus === option ? styles.formatButtonActive : null,
+              ]}
+              onPress={() => setTournamentStatus(option)}>
+              <ThemedText
+                style={
+                  tournamentStatus === option ? styles.formatButtonTextActive : styles.formatButtonText
+                }>
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </ThemedText>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.row}>
+          <View style={styles.flexItem}>
+            <ThemedText style={styles.sectionLabel}>Start date (YYYY-MM-DD)</ThemedText>
+            <TextInput
+              style={styles.input}
+              placeholder="2026-05-01"
+              value={tournamentStartDate}
+              onChangeText={setTournamentStartDate}
+            />
+          </View>
+          <View style={styles.flexItem}>
+            <ThemedText style={styles.sectionLabel}>End date (YYYY-MM-DD)</ThemedText>
+            <TextInput
+              style={styles.input}
+              placeholder="2026-05-03"
+              value={tournamentEndDate}
+              onChangeText={setTournamentEndDate}
+            />
+          </View>
+        </View>
+        {tournamentError ? <ThemedText style={styles.errorText}>{tournamentError}</ThemedText> : null}
+        <Pressable
+          style={[styles.primaryButton, isCreatingTournament ? styles.primaryButtonDisabled : null]}
+          onPress={() => void handleCreateTournament()}
+          disabled={isCreatingTournament}>
+          <ThemedText style={styles.primaryButtonText}>
+            {isCreatingTournament ? 'Creating tournament...' : 'Create tournament'}
+          </ThemedText>
+        </Pressable>
+      </View>
+
+      <View style={styles.section}>
+        <ThemedText style={styles.sectionTitle}>Select a tournament</ThemedText>
+        <View style={styles.rowWrap}>
+          <Pressable
+            style={[
+              styles.formatButton,
+              selectedTournamentId === null ? styles.formatButtonActive : null,
+            ]}
+            onPress={() => setSelectedTournamentId(null)}>
+            <ThemedText
+              style={selectedTournamentId === null ? styles.formatButtonTextActive : styles.formatButtonText}>
+              All matches
+            </ThemedText>
+          </Pressable>
+          {tournaments?.map((tournament) => (
+            <Pressable
+              key={tournament._id}
+              style={[
+                styles.formatButton,
+                selectedTournamentId === tournament._id ? styles.formatButtonActive : null,
+              ]}
+              onPress={() => setSelectedTournamentId(tournament._id)}>
+              <ThemedText
+                style={
+                  selectedTournamentId === tournament._id
+                    ? styles.formatButtonTextActive
+                    : styles.formatButtonText
+                }>
+                {tournament.name}
+              </ThemedText>
+            </Pressable>
+          ))}
+        </View>
+        {selectedTournament ? (
+          <View style={styles.statusCard}>
+            <ThemedText style={styles.helperText}>
+              Current status: {selectedTournament.status}
+            </ThemedText>
+            <View style={styles.row}>
+              {(['draft', 'active', 'completed'] as const).map((status) => (
+                <Pressable
+                  key={status}
+                  style={[
+                    styles.formatButton,
+                    selectedTournament.status === status ? styles.formatButtonActive : null,
+                  ]}
+                  onPress={() => void handleStatusUpdate(status)}>
+                  <ThemedText
+                    style={
+                      selectedTournament.status === status
+                        ? styles.formatButtonTextActive
+                        : styles.formatButtonText
+                    }>
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.formCard}>
+        <ThemedText style={styles.sectionTitle}>Create a match</ThemedText>
         <ThemedText style={styles.sectionLabel}>Match name (optional)</ThemedText>
         <TextInput
           style={styles.input}
@@ -260,15 +464,19 @@ function SignedInPanel() {
 
       <View style={styles.matchesSection}>
         <ThemedText type="title">Recent matches</ThemedText>
-        {matches === undefined ? (
+        {visibleMatches === undefined ? (
           <ThemedText style={styles.helperText}>Loading matches...</ThemedText>
-        ) : matches.length ? (
-          matches.map((match) => {
+        ) : visibleMatches.length ? (
+          visibleMatches.map((match) => {
             const home = match.participants.find((participant) => participant.side === 'home');
             const away = match.participants.find((participant) => participant.side === 'away');
             const homeLabel = home?.teamName || home?.players.join(', ') || 'Home';
             const awayLabel = away?.teamName || away?.players.join(', ') || 'Away';
             const formatLabel = match.format.charAt(0).toUpperCase() + match.format.slice(1);
+            const tournamentLabel = match.tournamentId
+              ? tournaments?.find((tournament) => tournament._id === match.tournamentId)?.name ??
+                'Tournament'
+              : 'Independent';
 
             return (
               <View key={match._id} style={styles.matchCard}>
@@ -276,6 +484,7 @@ function SignedInPanel() {
                 <ThemedText style={styles.helperText}>
                   {formatLabel} · {match.status}
                 </ThemedText>
+                <ThemedText style={styles.helperText}>{tournamentLabel}</ThemedText>
                 <ThemedText style={styles.matchSubtitle}>
                   {homeLabel} vs {awayLabel}
                 </ThemedText>
@@ -323,6 +532,10 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     backgroundColor: '#f9fafb',
   },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -343,6 +556,11 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+    gap: 12,
+  },
+  rowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   flexItem: {
@@ -393,6 +611,14 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#b91c1c',
+  },
+  statusCard: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#fff',
   },
   matchesSection: {
     gap: 12,
