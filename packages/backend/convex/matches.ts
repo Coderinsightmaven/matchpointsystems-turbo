@@ -1,11 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import {
-  getUserOrganization,
-  requireOrgMembership,
-  requireOrgRole,
-} from "./lib/orgAuth";
+import { getUserOrganization, requireOrgRole } from "./lib/orgAuth";
 
 const participantValidator = v.object({
   side: v.union(v.literal("home"), v.literal("away")),
@@ -33,20 +29,20 @@ const matchValidator = v.object({
   status: statusValidator,
   name: v.optional(v.string()),
   participants: v.array(participantValidator),
-  tournamentId: v.optional(v.id("tournaments")),
+  tournamentId: v.id("tournaments"),
   createdBy: v.optional(v.id("users")),
 });
 
 /**
- * Create a match (owner/admin only, or scorer if tournament exists)
- * Match inherits organizationId from tournament, or uses user's org for standalone matches
+ * Create a match (owner/admin only)
+ * Match must belong to a tournament and inherits organizationId from it
  */
 export const createMatch = mutation({
   args: {
     format: formatValidator,
     name: v.optional(v.string()),
     participants: v.array(participantValidator),
-    tournamentId: v.optional(v.id("tournaments")),
+    tournamentId: v.id("tournaments"),
   },
   returns: v.id("matches"),
   handler: async (ctx, args) => {
@@ -81,29 +77,15 @@ export const createMatch = mutation({
       }
     }
 
-    let organizationId;
-
-    if (args.tournamentId) {
-      // Match belongs to a tournament - inherit organization
-      const tournament = await ctx.db.get(args.tournamentId);
-      if (!tournament) {
-        throw new Error("Tournament not found.");
-      }
-      organizationId = tournament.organizationId;
-
-      // Only owner and admin can create matches within a tournament
-      await requireOrgRole(ctx, organizationId, ["owner", "admin"]);
-    } else {
-      // Standalone match - use user's organization
-      const userOrg = await getUserOrganization(ctx);
-      if (!userOrg) {
-        throw new Error("You must belong to an organization to create matches");
-      }
-      organizationId = userOrg.organization._id;
-
-      // Only owner and admin can create standalone matches
-      await requireOrgRole(ctx, organizationId, ["owner", "admin"]);
+    // Match belongs to a tournament - inherit organization
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found.");
     }
+    const organizationId = tournament.organizationId;
+
+    // Only owner and admin can create matches
+    await requireOrgRole(ctx, organizationId, ["owner", "admin"]);
 
     return await ctx.db.insert("matches", {
       organizationId,

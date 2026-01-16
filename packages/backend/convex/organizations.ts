@@ -112,6 +112,8 @@ export const getMyOrganization = query({
         name: v.string(),
         description: v.optional(v.string()),
         createdBy: v.id("users"),
+        teamNames: v.optional(v.array(v.string())),
+        playerNames: v.optional(v.array(v.string())),
       }),
       membership: v.object({
         _id: v.id("organizationMembers"),
@@ -310,6 +312,158 @@ export const updateOrganization = mutation({
     if (Object.keys(updates).length > 0) {
       await ctx.db.patch(args.organizationId, updates);
     }
+
+    return null;
+  },
+});
+
+/**
+ * Get organization roster (team names and player names)
+ */
+export const getRoster = query({
+  args: {
+    organizationId: v.id("organizations"),
+  },
+  returns: v.object({
+    teamNames: v.array(v.string()),
+    playerNames: v.array(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    await requireOrgMembership(ctx, args.organizationId);
+
+    const org = await ctx.db.get(args.organizationId);
+    if (!org) {
+      throw new Error("Organization not found");
+    }
+
+    return {
+      teamNames: org.teamNames ?? [],
+      playerNames: org.playerNames ?? [],
+    };
+  },
+});
+
+/**
+ * Add a team name to the organization roster (owner/admin only)
+ */
+export const addTeamName = mutation({
+  args: {
+    organizationId: v.id("organizations"),
+    name: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireOrgRole(ctx, args.organizationId, ["owner", "admin"]);
+
+    const trimmedName = args.name.trim();
+    if (!trimmedName) {
+      throw new Error("Team name cannot be empty");
+    }
+
+    const org = await ctx.db.get(args.organizationId);
+    if (!org) {
+      throw new Error("Organization not found");
+    }
+
+    const existing = org.teamNames ?? [];
+    if (existing.includes(trimmedName)) {
+      throw new Error("Team name already exists");
+    }
+
+    await ctx.db.patch(args.organizationId, {
+      teamNames: [...existing, trimmedName],
+    });
+
+    return null;
+  },
+});
+
+/**
+ * Remove a team name from the organization roster (owner/admin only)
+ */
+export const removeTeamName = mutation({
+  args: {
+    organizationId: v.id("organizations"),
+    name: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireOrgRole(ctx, args.organizationId, ["owner", "admin"]);
+
+    const org = await ctx.db.get(args.organizationId);
+    if (!org) {
+      throw new Error("Organization not found");
+    }
+
+    const existing = org.teamNames ?? [];
+    const updated = existing.filter((n) => n !== args.name);
+
+    await ctx.db.patch(args.organizationId, {
+      teamNames: updated,
+    });
+
+    return null;
+  },
+});
+
+/**
+ * Add a player name to the organization roster (owner/admin only)
+ */
+export const addPlayerName = mutation({
+  args: {
+    organizationId: v.id("organizations"),
+    name: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireOrgRole(ctx, args.organizationId, ["owner", "admin"]);
+
+    const trimmedName = args.name.trim();
+    if (!trimmedName) {
+      throw new Error("Player name cannot be empty");
+    }
+
+    const org = await ctx.db.get(args.organizationId);
+    if (!org) {
+      throw new Error("Organization not found");
+    }
+
+    const existing = org.playerNames ?? [];
+    if (existing.includes(trimmedName)) {
+      throw new Error("Player name already exists");
+    }
+
+    await ctx.db.patch(args.organizationId, {
+      playerNames: [...existing, trimmedName],
+    });
+
+    return null;
+  },
+});
+
+/**
+ * Remove a player name from the organization roster (owner/admin only)
+ */
+export const removePlayerName = mutation({
+  args: {
+    organizationId: v.id("organizations"),
+    name: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireOrgRole(ctx, args.organizationId, ["owner", "admin"]);
+
+    const org = await ctx.db.get(args.organizationId);
+    if (!org) {
+      throw new Error("Organization not found");
+    }
+
+    const existing = org.playerNames ?? [];
+    const updated = existing.filter((n) => n !== args.name);
+
+    await ctx.db.patch(args.organizationId, {
+      playerNames: updated,
+    });
 
     return null;
   },

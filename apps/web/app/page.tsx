@@ -196,6 +196,8 @@ type OrgData = {
     name: string;
     description?: string;
     createdBy: Id<"users">;
+    teamNames?: string[];
+    playerNames?: string[];
   };
   membership: {
     _id: Id<"organizationMembers">;
@@ -208,6 +210,7 @@ type OrgData = {
 
 function OrganizationDashboard({ org }: { org: OrgData }) {
   const [showMembers, setShowMembers] = useState(false);
+  const [showRoster, setShowRoster] = useState(false);
   const canManage = org.membership.role === "owner" || org.membership.role === "admin";
 
   return (
@@ -227,15 +230,28 @@ function OrganizationDashboard({ org }: { org: OrgData }) {
           </p>
         </div>
         {canManage && (
-          <button
-            type="button"
-            onClick={() => setShowMembers(!showMembers)}
-            className="px-3 py-2 text-sm font-medium border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-          >
-            {showMembers ? "Hide members" : "Manage members"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowRoster(!showRoster)}
+              className="px-3 py-2 text-sm font-medium border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
+              {showRoster ? "Hide roster" : "Manage roster"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMembers(!showMembers)}
+              className="px-3 py-2 text-sm font-medium border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
+              {showMembers ? "Hide members" : "Manage members"}
+            </button>
+          </div>
         )}
       </div>
+
+      {showRoster && canManage && (
+        <RosterManagement organizationId={org.organization._id} />
+      )}
 
       {showMembers && canManage && (
         <MemberManagement organizationId={org.organization._id} currentRole={org.membership.role} />
@@ -244,6 +260,159 @@ function OrganizationDashboard({ org }: { org: OrgData }) {
       <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
 
       <TournamentSection canManage={canManage} />
+    </div>
+  );
+}
+
+function RosterManagement({
+  organizationId,
+}: {
+  organizationId: Id<"organizations">;
+}) {
+  const roster = useQuery(api.organizations.getRoster, { organizationId });
+  const addTeamName = useMutation(api.organizations.addTeamName);
+  const removeTeamName = useMutation(api.organizations.removeTeamName);
+  const addPlayerName = useMutation(api.organizations.addPlayerName);
+  const removePlayerName = useMutation(api.organizations.removePlayerName);
+
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAddTeam = async () => {
+    if (!newTeamName.trim()) return;
+    setError(null);
+    try {
+      await addTeamName({ organizationId, name: newTeamName.trim() });
+      setNewTeamName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add team");
+    }
+  };
+
+  const handleRemoveTeam = async (name: string) => {
+    setError(null);
+    try {
+      await removeTeamName({ organizationId, name });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove team");
+    }
+  };
+
+  const handleAddPlayer = async () => {
+    if (!newPlayerName.trim()) return;
+    setError(null);
+    try {
+      await addPlayerName({ organizationId, name: newPlayerName.trim() });
+      setNewPlayerName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add player");
+    }
+  };
+
+  const handleRemovePlayer = async (name: string) => {
+    setError(null);
+    try {
+      await removePlayerName({ organizationId, name });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove player");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+        Organization Roster
+      </h3>
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Team Names
+          </h4>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+              placeholder="Add team name"
+              value={newTeamName}
+              onChange={(e) => setNewTeamName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void handleAddTeam()}
+            />
+            <button
+              type="button"
+              onClick={() => void handleAddTeam()}
+              className="px-3 py-2 text-sm font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-900"
+            >
+              Add
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {roster?.teamNames.map((name) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+              >
+                {name}
+                <button
+                  type="button"
+                  onClick={() => void handleRemoveTeam(name)}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  x
+                </button>
+              </span>
+            ))}
+            {roster?.teamNames.length === 0 && (
+              <p className="text-xs text-slate-500">No teams yet</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Player Names
+          </h4>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+              placeholder="Add player name"
+              value={newPlayerName}
+              onChange={(e) => setNewPlayerName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void handleAddPlayer()}
+            />
+            <button
+              type="button"
+              onClick={() => void handleAddPlayer()}
+              className="px-3 py-2 text-sm font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-900"
+            >
+              Add
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {roster?.playerNames.map((name) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+              >
+                {name}
+                <button
+                  type="button"
+                  onClick={() => void handleRemovePlayer(name)}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  x
+                </button>
+              </span>
+            ))}
+            {roster?.playerNames.length === 0 && (
+              <p className="text-xs text-slate-500">No players yet</p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -258,7 +427,11 @@ function MemberManagement({
   const members = useQuery(api.organizations.listMembers, { organizationId });
   const updateMemberRole = useMutation(api.organizations.updateMemberRole);
   const removeMember = useMutation(api.organizations.removeMember);
+  const inviteMember = useMutation(api.organizations.inviteMember);
   const [error, setError] = useState<string | null>(null);
+  const [inviteUserId, setInviteUserId] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "scorer">("scorer");
+  const [isInviting, setIsInviting] = useState(false);
 
   const isOwner = currentRole === "owner";
 
@@ -283,6 +456,24 @@ function MemberManagement({
     }
   };
 
+  const handleInvite = async () => {
+    if (!inviteUserId.trim()) return;
+    setError(null);
+    setIsInviting(true);
+    try {
+      await inviteMember({
+        organizationId,
+        userId: inviteUserId.trim() as Id<"users">,
+        role: inviteRole,
+      });
+      setInviteUserId("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to invite member");
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
       <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
@@ -291,6 +482,37 @@ function MemberManagement({
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
+
+      <div className="flex flex-col gap-2 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          Invite a member
+        </p>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-200"
+            placeholder="User ID"
+            value={inviteUserId}
+            onChange={(e) => setInviteUserId(e.target.value)}
+          />
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value as "admin" | "scorer")}
+            className="text-sm border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+          >
+            <option value="admin">Admin</option>
+            <option value="scorer">Scorer</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void handleInvite()}
+            disabled={isInviting}
+            className="px-3 py-2 text-sm font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-900 disabled:bg-slate-500"
+          >
+            {isInviting ? "..." : "Invite"}
+          </button>
+        </div>
+      </div>
+
       {members === undefined ? (
         <p className="text-sm text-slate-600 dark:text-slate-400">Loading members...</p>
       ) : members.length === 0 ? (
@@ -344,10 +566,10 @@ function MemberManagement({
 }
 
 function TournamentSection({ canManage }: { canManage: boolean }) {
-  const tournaments = useQuery(api.tournaments.listTournaments);
-  const matches = useQuery(api.matches.listMatches);
+  const tournaments = useQuery(api.tournaments.listTournaments, {});
   const createTournament = useMutation(api.tournaments.createTournament);
   const updateTournament = useMutation(api.tournaments.updateTournament);
+  const archiveTournament = useMutation(api.tournaments.archiveTournament);
   const createMatch = useMutation(api.matches.createMatch);
 
   const [selectedTournamentId, setSelectedTournamentId] = useState<
@@ -379,7 +601,7 @@ function TournamentSection({ canManage }: { canManage: boolean }) {
     selectedTournamentId ? { tournamentId: selectedTournamentId } : "skip"
   );
 
-  const visibleMatches = selectedTournamentId ? matchesByTournament : matches;
+  const visibleMatches = selectedTournamentId ? matchesByTournament : undefined;
 
   const selectedTournament = tournaments?.find(
     (tournament) => tournament._id === selectedTournamentId
@@ -510,12 +732,17 @@ function TournamentSection({ canManage }: { canManage: boolean }) {
       }
     }
 
+    if (!selectedTournamentId) {
+      setError("Please select a tournament first.");
+      return;
+    }
+
     const trimmedName = name.trim();
     const payload = {
       format,
       participants: [homeParticipant, awayParticipant],
+      tournamentId: selectedTournamentId,
       ...(trimmedName ? { name: trimmedName } : {}),
-      ...(selectedTournamentId ? { tournamentId: selectedTournamentId } : {}),
     };
 
     setIsSubmitting(true);
@@ -646,17 +873,11 @@ function TournamentSection({ canManage }: { canManage: boolean }) {
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-              selectedTournamentId === null
-                ? "bg-slate-800 text-white border-slate-800"
-                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600"
-            }`}
-            onClick={() => setSelectedTournamentId(null)}
-          >
-            All matches
-          </button>
+          {tournaments?.length === 0 && (
+            <p className="text-sm text-slate-500 dark:text-slate-400 italic">
+              No tournaments yet. Create one above.
+            </p>
+          )}
           {tournaments?.map((tournament) => (
             <button
               key={tournament._id}
@@ -696,20 +917,32 @@ function TournamentSection({ canManage }: { canManage: boolean }) {
                 </button>
               ))}
             </div>
+            <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  void archiveTournament({ tournamentId: selectedTournament._id });
+                  setSelectedTournamentId(null);
+                }}
+                className="text-xs text-red-600 dark:text-red-400 hover:underline"
+              >
+                Archive tournament
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       <div className="h-px bg-slate-200 dark:bg-slate-700"></div>
 
-      {canManage && (
+      {canManage && selectedTournamentId && (
         <>
           <form
             className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm"
             onSubmit={handleSubmit}
           >
             <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-              Create a match
+              Create a match in {selectedTournament?.name}
             </h3>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -819,6 +1052,12 @@ function TournamentSection({ canManage }: { canManage: boolean }) {
         </>
       )}
 
+      {canManage && !selectedTournamentId && (
+        <p className="text-sm text-slate-500 dark:text-slate-400 italic">
+          Select a tournament above to create matches.
+        </p>
+      )}
+
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
@@ -849,9 +1088,7 @@ function TournamentSection({ canManage }: { canManage: boolean }) {
               const awayLabel =
                 away?.teamName || away?.players.join(", ") || "Away";
 
-              const tournamentLabel = match.tournamentId
-                ? tournamentNameById.get(match.tournamentId) ?? "Tournament"
-                : "Independent";
+              const tournamentLabel = tournamentNameById.get(match.tournamentId) ?? "Tournament";
 
               return (
                 <div

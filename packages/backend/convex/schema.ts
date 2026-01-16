@@ -49,6 +49,8 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     createdBy: v.id("users"),
+    teamNames: v.optional(v.array(v.string())),
+    playerNames: v.optional(v.array(v.string())),
   }).index("by_name", ["name"]),
 
   // Organization members - links users to orgs with roles
@@ -78,6 +80,7 @@ export default defineSchema({
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     createdBy: v.optional(v.id("users")),
+    archived: v.optional(v.boolean()),
   })
     .index("by_organization", ["organizationId"])
     .index("by_sport", ["sport"])
@@ -100,7 +103,7 @@ export default defineSchema({
         players: v.array(v.string()),
       }),
     ),
-    tournamentId: v.optional(v.id("tournaments")),
+    tournamentId: v.id("tournaments"),
     createdBy: v.optional(v.id("users")),
   })
     .index("by_organization", ["organizationId"])

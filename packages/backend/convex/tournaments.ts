@@ -24,6 +24,7 @@ const tournamentValidator = v.object({
   startDate: v.optional(v.number()),
   endDate: v.optional(v.number()),
   createdBy: v.optional(v.id("users")),
+  archived: v.optional(v.boolean()),
 });
 
 /**
@@ -75,24 +76,32 @@ export const createTournament = mutation({
 });
 
 /**
- * List tournaments for the user's organization
+ * List tournaments for the user's organization (excludes archived by default)
  */
 export const listTournaments = query({
-  args: {},
+  args: {
+    includeArchived: v.optional(v.boolean()),
+  },
   returns: v.array(tournamentValidator),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const userOrg = await getUserOrganization(ctx);
     if (!userOrg) {
       return [];
     }
 
-    return await ctx.db
+    const allTournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_organization", (q) =>
         q.eq("organizationId", userOrg.organization._id)
       )
       .order("desc")
-      .take(50);
+      .take(100);
+
+    if (args.includeArchived) {
+      return allTournaments;
+    }
+
+    return allTournaments.filter((t) => !t.archived);
   },
 });
 
@@ -190,6 +199,50 @@ export const updateTournament = mutation({
     }
 
     await ctx.db.patch(args.tournamentId, updates);
+    return null;
+  },
+});
+
+/**
+ * Archive a tournament (owner/admin only)
+ */
+export const archiveTournament = mutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found");
+    }
+
+    // Only owner and admin can archive tournaments
+    await requireOrgRole(ctx, tournament.organizationId, ["owner", "admin"]);
+
+    await ctx.db.patch(args.tournamentId, { archived: true });
+    return null;
+  },
+});
+
+/**
+ * Unarchive a tournament (owner/admin only)
+ */
+export const unarchiveTournament = mutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found");
+    }
+
+    // Only owner and admin can unarchive tournaments
+    await requireOrgRole(ctx, tournament.organizationId, ["owner", "admin"]);
+
+    await ctx.db.patch(args.tournamentId, { archived: false });
     return null;
   },
 });
